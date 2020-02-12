@@ -1,0 +1,41 @@
+{
+  "name": "@onify/fake-amqplib",
+  "version": "0.0.1",
+  "description": "Fake amqplib",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha",
+    "posttest": "eslint . --cache"
+  },
+  "author": {
+    "name": "Onify",
+    "url": "https://github.com/onify"
+  },
+  "engines": {
+    "node": ">=8.9.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/onify/fake-amqplib.git"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "smqp": "^2.1.1"
+  },
+  "keywords": [
+    "fake",
+    "mock",
+    "amqplib"
+  ],
+  "devDependencies": {
+    "chai": "^4.2.0",
+    "eslint": "^6.8.0",
+    "mocha": "^7.0.1"
+  },
+  "files": [
+    "index.js"
+  ],
+  "directories": {
+    "test": "test"
+  }
+}
