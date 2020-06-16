@@ -25,3 +25,12 @@ const fakeAmqp = require('@onify/fake-amqplib');
 
 mock('amqplib/callback_api', fakeAmqp);
 ```
+
+or just mock the entire amqplib with
+
+```javascript
+const mock = require('mock-require');
+const fakeAmqp = require('@onify/fake-amqplib');
+
+mock('amqplib', fakeAmqp);
+```

@@ -1,6 +1,7 @@
 'use strict';
 
 const {Broker} = require('smqp');
+const {EventEmitter} = require('events');
 
 const connections = [];
 
@@ -23,26 +24,33 @@ function Fake() {
 
   function resetMock() {
     for (const connection of connections.splice(0)) {
-      connection.close();
+      connection._broker.reset();
     }
   }
 
   function Connection(broker, ...connArgs) {
     const options = connArgs.filter((a) => typeof a !== 'function');
+    const channels = [];
 
     return {
       _broker: broker,
       options,
       createChannel(...args) {
-        return resolveOrCallback(args.slice(-1)[0], null, Channel(broker));
+        const channel = Channel(broker);
+        channels.push(channel);
+        return resolveOrCallback(args.slice(-1)[0], null, channel);
       },
       createConfirmChannel(...args) {
-        return resolveOrCallback(args.slice(-1)[0], null, Channel(broker, true));
+        const channel = Channel(broker, true);
+        channels.push(channel);
+        return resolveOrCallback(args.slice(-1)[0], null, channel);
       },
-      close(...args) {
+      async close(...args) {
         const idx = connections.indexOf(this);
         if (idx > -1) connections.splice(idx, 1);
-        broker.reset();
+        channels.splice(0).forEach((channel) => channel.close());
+
+        // broker.reset();
         return resolveOrCallback(args.slice(-1)[0]);
       },
       on() {},
@@ -50,7 +58,11 @@ function Fake() {
   }
 
   function Channel(broker, confirm) {
+    let closed = false;
+    const emitter = new EventEmitter();
+    const channelName = 'channel-' + generateId();
     return {
+      _broker: broker,
       assertExchange(...args) {
         return callBroker(broker.assertExchange, ...args);
       },
@@ -111,15 +123,22 @@ function Fake() {
       unbindQueue(...args) {
         return callBroker(broker.unbindQueue, ...args);
       },
-      consume(queue, onMessage, ...args) {
-        const passArgs = args.length ? args : [{}];
-        return callBroker(broker.consume, queue, onMessage && handler, ...passArgs);
+      consume(queue, onMessage, options = {}, callback) {
+        return callBroker(broker.consume, queue, onMessage && handler, {...options, channelName}, callback);
         function handler(_, msg) {
           onMessage(msg);
         }
       },
-      cancel(...args) {
-        return callBroker(broker.cancel, ...args);
+      cancel(consumerTag, ...args) {
+        return callBroker(broker.cancel, consumerTag, ...args);
+      },
+      close(callback) {
+        if (closed) return;
+        const channelConsumers = broker.getConsumers().filter((f) => f.options.channelName === channelName);
+        channelConsumers.forEach((c) => broker.cancel(c.consumerTag));
+        closed = true;
+        emitter.emit('close');
+        return resolveOrCallback(callback);
       },
       ack: broker.ack,
       ackAll: broker.ackAll,
@@ -127,13 +146,17 @@ function Fake() {
       reject: broker.reject,
       nackAll: broker.nackAll,
       prefetch() {},
-      on: broker.on,
+      on(...args) {
+        return emitter.on(...args);
+      },
     };
 
     function callBroker(fn, ...args) {
       let [poppedCb] = args.slice(-1);
       if (typeof poppedCb === 'function') args.splice(-1);
       else poppedCb = null;
+
+      if (closed) throw new Error('Channel is closed');
 
       return new Promise((resolve, reject) => {
         try {
@@ -153,4 +176,12 @@ function Fake() {
 function resolveOrCallback(optionalCb, err, ...args) {
   if (typeof optionalCb === 'function') optionalCb(err, ...args);
   return Promise.resolve(...args);
+}
+
+function generateId() {
+  const min = 110000;
+  const max = 9999999;
+  const rand = Math.floor(Math.random() * (max - min)) + min;
+
+  return rand.toString(16);
 }

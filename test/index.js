@@ -41,6 +41,42 @@ describe('fake amqplib', () => {
       expect(connections).to.include(conn);
 
       conn.close();
+
+      expect(connections).to.not.include(conn);
+    });
+
+    it('connection.close() removes connection from list but keeps other connections to same url', async () => {
+      const conn1 = await connect('amqp://testrabbit:5672');
+      const conn2 = await connect('amqp://testrabbit:5672');
+      await conn1.close();
+      expect(connections).to.not.include(conn1);
+      expect(connections).to.include(conn2);
+    });
+
+    it('closed connection keeps broker for other connection', async () => {
+      const conn1 = await connect('amqp://testrabbit:5672');
+
+      const conn2 = await connect('amqp://testrabbit:5672');
+      const channel2 = await conn2.createChannel();
+      await channel2.assertExchange('event', 'topic');
+      await channel2.assertQueue('event-q');
+      await channel2.bindQueue('event-q', 'event', '#');
+      let msgs = [];
+      await channel2.consume('event-q', (msg) => {
+        msgs.push(msg);
+      }, {noAck: true});
+
+      const channel1 = await conn1.createChannel();
+      await channel1.assertQueue('event1-q');
+      await channel1.bindQueue('event1-q', 'event', '#');
+      await channel1.consume('event1-q', (msg) => {
+        msgs.push(msg);
+      }, {noAck: true});
+
+      await conn1.close();
+
+      await channel2.publish('event', 'test.event', Buffer.from('test'));
+      expect(msgs).to.have.length(1);
     });
   });
 
@@ -80,6 +116,7 @@ describe('fake amqplib', () => {
         expect(channel).have.property('unbindExchange').that.is.a('function');
         expect(channel).have.property('unbindQueue').that.is.a('function');
         expect(channel).have.property('on').that.is.a('function');
+        expect(channel).have.property('close').that.is.a('function');
         done();
       });
     });
@@ -110,6 +147,7 @@ describe('fake amqplib', () => {
         expect(channel).have.property('unbindExchange').that.is.a('function');
         expect(channel).have.property('unbindQueue').that.is.a('function');
         expect(channel).have.property('on').that.is.a('function');
+        expect(channel).have.property('close').that.is.a('function');
         done();
       });
     });
@@ -424,6 +462,40 @@ describe('fake amqplib', () => {
       }
 
       expect(error).to.be.an('error');
+    });
+  });
+
+  describe('#close', () => {
+    let channel;
+    beforeEach(async () => {
+      resetMock();
+      const connection = await connect('amqp://amqp.test');
+      channel = await connection.createChannel();
+      await channel.assertQueue('event-q');
+      await channel.consume('event-q', () => {});
+    });
+
+    it('closes all consumers', (done) => {
+      expect(channel._broker.consumerCount).to.equal(1);
+
+      channel.close((err) => {
+        if (err) return done(err);
+        expect(channel._broker.consumerCount).to.equal(0);
+        done();
+      });
+    });
+
+    it('emits close when done', (done) => {
+      channel.on('close', () => {
+        done();
+      });
+      channel.close();
+    });
+
+    it('promise closes all consumers', async () => {
+      expect(channel._broker.consumerCount).to.equal(1);
+      await channel.close();
+      expect(channel._broker.consumerCount).to.equal(0);
     });
   });
 
