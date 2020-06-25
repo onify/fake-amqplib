@@ -29,11 +29,15 @@ function Fake() {
   }
 
   function Connection(broker, ...connArgs) {
+    const emitter = new EventEmitter();
     const options = connArgs.filter((a) => typeof a !== 'function');
     const channels = [];
 
     return {
       _broker: broker,
+      get _emitter() {
+        return emitter;
+      },
       options,
       createChannel(...args) {
         const channel = Channel(broker);
@@ -53,7 +57,12 @@ function Fake() {
         // broker.reset();
         return resolveOrCallback(args.slice(-1)[0]);
       },
-      on() {},
+      on(...args) {
+        return emitter.on(...args);
+      },
+      once(...args) {
+        return emitter.once(...args);
+      },
     };
   }
 
@@ -63,6 +72,9 @@ function Fake() {
     const channelName = 'channel-' + generateId();
     return {
       _broker: broker,
+      get _emitter() {
+        return emitter;
+      },
       assertExchange(...args) {
         return callBroker(broker.assertExchange, ...args);
       },
@@ -148,6 +160,9 @@ function Fake() {
       prefetch() {},
       on(...args) {
         return emitter.on(...args);
+      },
+      once(...args) {
+        return emitter.once(...args);
       },
     };
 

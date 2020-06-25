@@ -12,6 +12,7 @@ describe('fake amqplib', () => {
         expect(connection).have.property('createConfirmChannel').that.is.a('function');
         expect(connection).have.property('close').that.is.a('function');
         expect(connection).have.property('on').that.is.a('function');
+        expect(connection).have.property('once').that.is.a('function');
         done();
       });
     });
@@ -116,6 +117,7 @@ describe('fake amqplib', () => {
         expect(channel).have.property('unbindExchange').that.is.a('function');
         expect(channel).have.property('unbindQueue').that.is.a('function');
         expect(channel).have.property('on').that.is.a('function');
+        expect(channel).have.property('once').that.is.a('function');
         expect(channel).have.property('close').that.is.a('function');
         done();
       });
@@ -147,6 +149,7 @@ describe('fake amqplib', () => {
         expect(channel).have.property('unbindExchange').that.is.a('function');
         expect(channel).have.property('unbindQueue').that.is.a('function');
         expect(channel).have.property('on').that.is.a('function');
+        expect(channel).have.property('once').that.is.a('function');
         expect(channel).have.property('close').that.is.a('function');
         done();
       });
