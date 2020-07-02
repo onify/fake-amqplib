@@ -66,8 +66,8 @@ function Fake() {
     };
   }
 
-  function Channel(broker, confirm) {
-    let closed = false;
+  function Channel(broker, confirmChannel) {
+    let closed = false, prefetch = 10000;
     const emitter = new EventEmitter();
     const channelName = 'channel-' + generateId();
     return {
@@ -76,10 +76,27 @@ function Fake() {
         return emitter;
       },
       assertExchange(...args) {
-        return callBroker(broker.assertExchange, ...args);
+        return callBroker(assertExchange, ...args);
+
+        function assertExchange(exchange, ...args) {
+          broker.assertExchange(exchange, ...args);
+          return {
+            exchange,
+          };
+        }
       },
       assertQueue(...args) {
-        return callBroker(broker.assertQueue, ...args);
+        return callBroker(assertQueue, ...args);
+
+        function assertQueue(queueName, ...args) {
+          const name = queueName ? queueName : 'amqp.gen-' + generateId();
+          const queue = broker.assertQueue(queueName, ...args);
+          return {
+            ...(!queueName ? {queue: name} : undefined),
+            messageCount: queue.messageCount,
+            consumerCount: queue.consumerCount,
+          };
+        }
       },
       bindExchange(...args) {
         return callBroker(broker.bindExchange, ...args);
@@ -99,8 +116,13 @@ function Fake() {
         return callBroker(check, ...args);
 
         function check() {
-          if (!broker.getQueue(name)) throw new Error(`queue with name ${name} not found`);
-          return true;
+          let queue;
+          if (!(queue = broker.getQueue(name))) throw new Error(`queue with name ${name} not found`);
+
+          return {
+            messageCount: queue.messageCount,
+            consumerCount: queue.consumerCount,
+          };
         }
       },
       get(queue, ...args) {
@@ -118,16 +140,26 @@ function Fake() {
       deleteQueue(...args) {
         return callBroker(broker.deleteQueue, ...args);
       },
-      publish(exchange, routingKey, content, ...args) {
+      publish(exchange, routingKey, content, options, callback) {
         if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
-        return confirm ? callBroker(broker.publish, exchange, routingKey, content, ...args) : broker.publish(exchange, routingKey, content, ...args);
+        return confirmChannel ? publish() : callBroker(broker.publish, exchange, routingKey, content, options);
+
+        function publish() {
+          const confirm = makeConfirmCallback(callback);
+          broker.publish(exchange, routingKey, content, {...options, confirm});
+        }
       },
       purgeQueue(...args) {
         return callBroker(broker.purgeQueue, ...args);
       },
-      sendToQueue(queue, content, ...args) {
+      sendToQueue(queue, content, options, callback) {
         if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
-        return confirm ? callBroker(broker.sendToQueue, queue, content, ...args) : broker.sendToQueue(queue, content, ...args);
+        return confirmChannel ? sendToQueue() : callBroker(broker.sendToQueue, queue, content, options);
+
+        function sendToQueue() {
+          const confirm = makeConfirmCallback(callback);
+          broker.sendToQueue(queue, content, {...options, confirm});
+        }
       },
       unbindExchange(...args) {
         return callBroker(broker.unbindExchange, ...args);
@@ -136,7 +168,7 @@ function Fake() {
         return callBroker(broker.unbindQueue, ...args);
       },
       consume(queue, onMessage, options = {}, callback) {
-        return callBroker(broker.consume, queue, onMessage && handler, {...options, channelName}, callback);
+        return callBroker(broker.consume, queue, onMessage && handler, {...options, channelName, prefetch}, callback);
         function handler(_, msg) {
           onMessage(msg);
         }
@@ -154,10 +186,14 @@ function Fake() {
       },
       ack: broker.ack,
       ackAll: broker.ackAll,
-      nack: broker.nack,
+      nack(message, ...args) {
+        return broker.nack(message, ...args);
+      },
       reject: broker.reject,
       nackAll: broker.nackAll,
-      prefetch() {},
+      prefetch(val) {
+        prefetch = val;
+      },
       on(...args) {
         return emitter.on(...args);
       },
@@ -165,6 +201,32 @@ function Fake() {
         return emitter.once(...args);
       },
     };
+
+    function makeConfirmCallback(callback) {
+      const confirm = 'msg.' + generateId();
+      const consumerTag = 'ct-' + confirm;
+      broker.on('message.*', onConsumeMessage, {consumerTag});
+
+      function onConsumeMessage(event) {
+        if (event.properties.confirm !== confirm) return;
+
+        switch(event.name) {
+          case 'message.nack':
+            return confirmCallback(new Error('message nacked'));
+          case 'message.undelivered':
+            return confirmCallback(new Error('message undelivered'));
+          case 'message.ack':
+            return confirmCallback(null, true);
+        }
+
+        function confirmCallback(err, ok) {
+          broker.off('message.*', {consumerTag});
+          callback(err, ok);
+        }
+      }
+
+      return confirm;
+    }
 
     function callBroker(fn, ...args) {
       let [poppedCb] = args.slice(-1);

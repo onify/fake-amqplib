@@ -237,85 +237,18 @@ describe('fake amqplib', () => {
     });
   });
 
-  describe('#publish', () => {
-    let connection;
-    before((done) => {
-      connect('amqp://localhost', null, (err, conn) => {
-        if (err) return done(err);
-        connection = conn;
-        done();
-      });
+  describe('#assertExchange', () => {
+    let channel;
+    before(async () => {
+      resetMock();
+      const connection = await connect('amqp://localhost');
+      channel = await connection.createChannel();
     });
 
-    it('ignores callback', async () => {
-      const channel = await connection.createChannel();
-      await channel.assertExchange('consume');
-      await channel.assertQueue('consume-q');
-      await channel.bindQueue('consume-q', 'consume', '#');
-
-      return new Promise((resolve, reject) => {
-        channel.publish('consume', 'test.1', Buffer.from('msg'), {type: 'test'}, () => {
-          reject(new Error('Ignore callback'));
-        });
-        channel.consume('consume-q', resolve);
-      });
-    });
-
-    it('confirm channel calls callback when published', async () => {
-      const channel = await connection.createConfirmChannel();
-      await channel.assertExchange('consume');
-      await channel.assertQueue('consume-q');
-      await channel.bindQueue('consume-q', 'consume', '#');
-
-      return new Promise((resolve) => {
-        channel.publish('consume', 'test.1', Buffer.from(JSON.stringify({})), () => {
-          resolve();
-        });
-      });
-    });
-  });
-
-  describe('#sendToQueue', () => {
-    let connection;
-    before((done) => {
-      connect('amqp://localhost', null, (err, conn) => {
-        if (err) return done(err);
-        connection = conn;
-        done();
-      });
-    });
-
-    it('breaks if message is not a buffer', async () => {
-      const channel = await connection.createChannel();
-      await channel.assertQueue('consume-q');
-      await channel.bindQueue('consume-q', 'consume', '#');
-
-      expect(() => channel.sendToQueue('consume-q', {})).to.throw(/not a buffer/i);
-    });
-
-    it('ignores callback', async () => {
-      const channel = await connection.createChannel();
-      await channel.assertQueue('consume-q');
-      await channel.bindQueue('consume-q', 'consume', '#');
-
-      return new Promise((resolve, reject) => {
-        channel.sendToQueue('consume-q', Buffer.from('msg'), () => {
-          reject(new Error('Ignore callback'));
-        });
-        channel.consume('consume-q', resolve);
-      });
-    });
-
-    it('confirm channel calls callback when sent', async () => {
-      const channel = await connection.createConfirmChannel();
-      await channel.assertQueue('consume-q');
-      await channel.bindQueue('consume-q', 'consume', '#');
-
-      return new Promise((resolve) => {
-        channel.sendToQueue('consume-q', Buffer.from(JSON.stringify({})), () => {
-          resolve();
-        });
-      });
+    it('creates exchange', async () => {
+      const ok = await channel.assertExchange('event');
+      expect(ok).to.be.ok;
+      expect(ok).to.have.property('exchange', 'event');
     });
   });
 
@@ -363,6 +296,42 @@ describe('fake amqplib', () => {
     });
   });
 
+  describe('#assertQueue', () => {
+    let channel;
+    before(async () => {
+      resetMock();
+      const connection = await connect('amqp://localhost');
+      channel = await connection.createChannel();
+    });
+
+    it('creates named queue', async () => {
+      const ok = await channel.assertQueue('event-q');
+      expect(ok).to.be.ok;
+      expect(ok).to.not.have.property('queue');
+      expect(ok).to.have.property('consumerCount');
+      expect(ok).to.have.property('messageCount');
+    });
+
+    it('returns named queue properties in callback', (done) => {
+      channel.assertQueue('eventcb-q', (err, ok) => {
+        if (err) return done(err);
+        expect(ok).to.be.ok;
+        expect(ok).to.not.have.property('queue');
+        expect(ok).to.have.property('consumerCount');
+        expect(ok).to.have.property('messageCount');
+        done();
+      });
+    });
+
+    it('creates server named queue if name is falsy', async () => {
+      const ok = await channel.assertQueue('');
+      expect(ok).to.be.ok;
+      expect(ok).to.have.property('queue').that.is.ok;
+      expect(ok).to.have.property('consumerCount');
+      expect(ok).to.have.property('messageCount');
+    });
+  });
+
   describe('#checkQueue', () => {
     let channel;
     before(async () => {
@@ -371,11 +340,13 @@ describe('fake amqplib', () => {
       channel = await connection.createChannel();
     });
 
-    it('returns ok in callback if exists', (done) => {
+    it('returns message- and consumer count in callback if exists', (done) => {
       channel.assertQueue('eventcb-q', () => {
         channel.checkQueue('eventcb-q', (err, ok) => {
           if (err) return done(err);
-          expect(ok).to.be.true;
+          expect(ok).to.be.ok;
+          expect(ok).to.have.property('consumerCount');
+          expect(ok).to.have.property('messageCount');
           done();
         });
       });
@@ -393,10 +364,12 @@ describe('fake amqplib', () => {
       await channel.assertQueue('event-q');
 
       const ok = await channel.checkQueue('event-q');
-      expect(ok).to.be.true;
+      expect(ok).to.be.ok;
+      expect(ok).to.have.property('consumerCount');
+      expect(ok).to.have.property('messageCount');
     });
 
-    it('rejects if not found', async () => {
+    it('rejects queue if not found', async () => {
       try {
         await channel.checkQueue('notfound');
       } catch (err) {
@@ -404,6 +377,157 @@ describe('fake amqplib', () => {
       }
 
       expect(error).to.be.an('error');
+    });
+  });
+
+  describe('#publish', () => {
+    let connection;
+    beforeEach(async () => {
+      resetMock();
+      connection = await connect('amqp://localhost');
+    });
+
+    it('ignores callback', async () => {
+      const channel = await connection.createChannel();
+      await channel.assertExchange('consume');
+      await channel.assertQueue('consume-q');
+      await channel.bindQueue('consume-q', 'consume', '#');
+
+      return new Promise((resolve, reject) => {
+        channel.publish('consume', 'test.1', Buffer.from('msg'), {type: 'test'}, {}, () => {
+          reject(new Error('Ignore callback'));
+        });
+        channel.consume('consume-q', resolve);
+      });
+    });
+
+    it('confirm channel calls callback with error if message was undeliverable', async () => {
+      const channel = await connection.createConfirmChannel();
+      await channel.assertExchange('consume');
+
+      return new Promise((resolve, reject) => {
+        channel.publish('consume', 'test.1', Buffer.from('MSG'), {}, (err, ok) => {
+          if (ok) return reject(new Error('undeliverable message was delivered'));
+          resolve(err);
+        });
+      });
+    });
+
+    it('confirm channel calls callback with error message was nacked', async () => {
+      const channel = await connection.createConfirmChannel();
+      await channel.assertExchange('consume');
+      await channel.assertQueue('consume-q');
+      await channel.bindQueue('consume-q', 'consume', '#');
+
+      return new Promise((resolve, reject) => {
+        channel.publish('consume', 'test.1', Buffer.from('MSG'), {}, (err, ok) => {
+          if (ok) return reject(new Error('is ok'));
+          resolve(err);
+        });
+
+        channel.get('consume-q', (err, message) => {
+          channel.nack(message, false, false);
+        });
+      });
+    });
+
+    it('confirm channel calls callback when message is acked', async () => {
+      const channel = await connection.createConfirmChannel();
+      await channel.assertExchange('consume');
+      await channel.assertQueue('consume-q');
+      await channel.bindQueue('consume-q', 'consume', '#');
+
+      return new Promise((resolve, reject) => {
+        channel.publish('consume', 'test.1', Buffer.from('MSG'), {}, (err, ok) => {
+          if (err) return reject(err);
+          resolve(ok);
+        });
+
+        channel.get('consume-q', (err, message) => {
+          channel.ack(message);
+        });
+      });
+    });
+  });
+
+  describe('#sendToQueue', () => {
+    let connection;
+    beforeEach(async () => {
+      resetMock();
+      connection = await connect('amqp://localhost');
+    });
+
+    it('breaks if message is not a buffer', async () => {
+      const channel = await connection.createChannel();
+      await channel.assertExchange('consume');
+      await channel.assertQueue('consume-q');
+      await channel.bindQueue('consume-q', 'consume', '#');
+
+      expect(() => channel.sendToQueue('consume-q', {})).to.throw(/not a buffer/i);
+    });
+
+    it('ignores callback if not confirm channel', async () => {
+      const channel = await connection.createChannel();
+      await channel.assertExchange('consume');
+      await channel.assertQueue('consume-q');
+      await channel.bindQueue('consume-q', 'consume', '#');
+
+      return new Promise((resolve, reject) => {
+        channel.sendToQueue('consume-q', Buffer.from('msg'), {}, () => {
+          reject(new Error('Ignore callback'));
+        });
+
+        channel.consume('consume-q', resolve, {noAck: true});
+      });
+    });
+
+    it('confirm channel calls callback with error message was nacked', async () => {
+      const channel = await connection.createConfirmChannel();
+      await channel.assertQueue('consume-q');
+
+      return new Promise((resolve, reject) => {
+        channel.sendToQueue('consume-q', Buffer.from('MSG'), {}, (err, ok) => {
+          if (ok) return reject(new Error('is ok'));
+          resolve(err);
+        });
+
+        channel.get('consume-q', (err, message) => {
+          if (err) reject(err);
+          channel.nack(message, false, false);
+        });
+      });
+    });
+
+    it('confirm channel calls callback with error message was rejected', async () => {
+      const channel = await connection.createConfirmChannel();
+      await channel.assertQueue('consume-q');
+
+      return new Promise((resolve, reject) => {
+        channel.sendToQueue('consume-q', Buffer.from('MSG'), {}, (err, ok) => {
+          if (ok) return reject(new Error('is ok'));
+          resolve(err);
+        });
+
+        channel.get('consume-q', (err, message) => {
+          channel.reject(message, false);
+        });
+      });
+    });
+
+    it('confirm channel calls callback when message was acked', async () => {
+      const channel = await connection.createConfirmChannel();
+      await channel.assertQueue('consume-q');
+
+      return new Promise((resolve, reject) => {
+        channel.sendToQueue('consume-q', Buffer.from('MSG'), {}, (err, ok) => {
+          if (err) return reject(err);
+          resolve(ok);
+        });
+
+        channel.get('consume-q', (err, message) => {
+          channel.ack(message);
+        });
+      });
     });
   });
 
@@ -465,6 +589,129 @@ describe('fake amqplib', () => {
       }
 
       expect(error).to.be.an('error');
+    });
+  });
+
+  describe('#consume', () => {
+    let channel;
+    beforeEach(async () => {
+      resetMock();
+      const connection = await connect('amqp://amqp.test');
+      channel = await connection.createChannel();
+      await channel.assertExchange('event');
+      await channel.assertQueue('event-q');
+    });
+
+    it('returns published message in callback', (done) => {
+      channel.bindQueue('event-q', 'event', '#').then(() => {
+        channel.consume('event-q', (msg) => {
+          expect(msg).to.be.ok;
+          expect(msg).to.to.have.property('content');
+          done();
+        });
+
+        channel.publish('event', 'test.message', Buffer.from('MSG'));
+      });
+    });
+
+    it('with noAck and double bindings to same queue returns published message in callback', async () => {
+      await channel.bindQueue('event-q', 'event', 'test.message');
+      await channel.bindQueue('event-q', 'event', 'live.#');
+
+      const waitMessages = new Promise((resolve) => {
+        const messages = [];
+        channel.consume('event-q', (msg) => {
+          messages.push(msg);
+          if (messages.length === 3) resolve(messages);
+        }, {noAck: true});
+      });
+
+      channel.publish('event', 'test.prod', Buffer.from('PROD'));
+      channel.publish('event', 'test.message', Buffer.from('TEST'));
+      channel.publish('event', 'live.message', Buffer.from('LIVE'));
+      channel.publish('event', 'live.message.test', Buffer.from('LIVE-TEST'));
+
+      const msgs = await waitMessages;
+      expect(msgs[0], 'message #1').to.have.property('fields').with.property('routingKey', 'test.message');
+      expect(msgs[1], 'message #2').to.have.property('fields').with.property('routingKey', 'live.message');
+      expect(msgs[2], 'message #3').to.have.property('fields').with.property('routingKey', 'live.message.test');
+    });
+
+    it('with ack and double bindings to same queue returns published message in callback', async () => {
+      await channel.bindQueue('event-q', 'event', 'test.message');
+      await channel.bindQueue('event-q', 'event', 'live.#');
+
+      const waitMessages = new Promise((resolve) => {
+        const messages = [];
+        channel.consume('event-q', (msg) => {
+          messages.push(msg);
+          channel.ack(msg);
+          if (messages.length === 3) resolve(messages);
+        });
+      });
+
+      channel.publish('event', 'test.prod', Buffer.from('PROD'));
+      channel.publish('event', 'test.message', Buffer.from('TEST'));
+      channel.publish('event', 'live.message', Buffer.from('LIVE'));
+      channel.publish('event', 'live.message.test', Buffer.from('LIVE-TEST'));
+
+      const msgs = await waitMessages;
+      expect(msgs[0], 'message #1').to.have.property('fields').with.property('routingKey', 'test.message');
+      expect(msgs[1], 'message #2').to.have.property('fields').with.property('routingKey', 'live.message');
+      expect(msgs[2], 'message #3').to.have.property('fields').with.property('routingKey', 'live.message.test');
+    });
+  });
+
+  describe('#prefetch', () => {
+    let channel;
+    beforeEach(async () => {
+      resetMock();
+      const connection = await connect('amqp://amqp.test');
+      channel = await connection.createChannel();
+      await channel.assertExchange('event');
+      await channel.assertQueue('event-q');
+      await channel.bindQueue('event-q', 'event', '#');
+    });
+
+    it('consumes prefetch count messages at a time', async () => {
+      channel.prefetch(3);
+
+      await Promise.all(Array(9).fill().map((_, idx) => {
+        return channel.publish('event', `test.${idx}`, Buffer.from('' + idx));
+      }));
+
+      const messages = [];
+      channel.consume('event-q', async (msg) => {
+        messages.push(msg);
+      });
+
+      expect(messages).to.have.length(3);
+      messages.splice(0).forEach((msg) => channel.ack(msg));
+
+      let queueOptions = await channel.checkQueue('event-q');
+      expect(queueOptions).to.have.property('messageCount', 6);
+
+      expect(messages).to.have.length(3);
+      messages.splice(0).forEach((msg) => channel.ack(msg));
+
+      queueOptions = await channel.checkQueue('event-q');
+      expect(queueOptions).to.have.property('messageCount', 3);
+
+      expect(messages).to.have.length(3);
+      messages.splice(0).forEach((msg) => channel.ack(msg));
+    });
+
+    it('no prefetch consumes "all" messages', async () => {
+      await Promise.all(Array(9).fill().map((_, idx) => {
+        return channel.publish('event', `test.${idx}`, Buffer.from('' + idx));
+      }));
+
+      const messages = [];
+      channel.consume('event-q', async (msg) => {
+        messages.push(msg);
+      });
+
+      expect(messages).to.have.length(9);
     });
   });
 
