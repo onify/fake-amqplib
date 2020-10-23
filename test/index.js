@@ -593,10 +593,10 @@ describe('fake amqplib', () => {
   });
 
   describe('#consume', () => {
-    let channel;
+    let connection, channel;
     beforeEach(async () => {
       resetMock();
-      const connection = await connect('amqp://amqp.test');
+      connection = await connect('amqp://amqp.test');
       channel = await connection.createChannel();
       await channel.assertExchange('event');
       await channel.assertQueue('event-q');
@@ -659,6 +659,62 @@ describe('fake amqplib', () => {
       expect(msgs[0], 'message #1').to.have.property('fields').with.property('routingKey', 'test.message');
       expect(msgs[1], 'message #2').to.have.property('fields').with.property('routingKey', 'live.message');
       expect(msgs[2], 'message #3').to.have.property('fields').with.property('routingKey', 'live.message.test');
+    });
+
+    it('with exlusive returns message in callback', async () => {
+      await channel.bindQueue('event-q', 'event', 'live.#');
+
+      const waitMessages = new Promise((resolve) => {
+        const messages = [];
+        channel.consume('event-q', (msg) => {
+          messages.push(msg);
+          channel.ack(msg);
+          if (messages.length === 2) resolve(messages);
+        }, {exclusive: true});
+      });
+
+      channel.publish('event', 'live.message', Buffer.from('LIVE'));
+      channel.publish('event', 'live.message.test', Buffer.from('LIVE-TEST'));
+
+      const msgs = await waitMessages;
+      expect(msgs[0], 'message #1').to.have.property('fields').with.property('routingKey', 'live.message');
+      expect(msgs[1], 'message #2').to.have.property('fields').with.property('routingKey', 'live.message.test');
+    });
+
+    it('kills channel if trying to consume exlusive consumed queue', async () => {
+      await channel.bindQueue('event-q', 'event', 'live.#');
+
+      const waitMessage = new Promise((resolve) => {
+        channel.consume('event-q', (msg) => {
+          channel.ack(msg);
+          resolve(msg);
+        }, {exclusive: true});
+      });
+
+      const secondChannel = await connection.createChannel();
+
+      try {
+        await secondChannel.consume('event-q', (msg) => {
+          channel.ack(msg);
+        }, {exclusive: true});
+      } catch (err) {
+        var consumeError = err;
+      }
+
+      expect(consumeError).to.be.ok.and.match(/exclusively consumed/i);
+
+      try {
+        await secondChannel.publish('event', 'live.dead', Buffer.from('DEAD'));
+      } catch (err) {
+        var channelError = err;
+      }
+
+      expect(channelError).to.be.ok.and.match(/closed/i);
+
+      await channel.publish('event', 'live.message', Buffer.from('LIVE'));
+
+      const msg = await waitMessage;
+      expect(msg).to.have.property('fields').with.property('routingKey', 'live.message');
     });
   });
 

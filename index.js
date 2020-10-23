@@ -241,6 +241,9 @@ function Fake() {
           if (poppedCb) poppedCb(null, result);
           return resolve(result);
         } catch (err) {
+          if (fn === broker.consume && /exclusively consumed/.test(err.message)) {
+            closed = true;
+          }
           if (!poppedCb) return reject(err);
           poppedCb(err);
           return resolve();
