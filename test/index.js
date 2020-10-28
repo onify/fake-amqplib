@@ -334,7 +334,7 @@ describe('fake amqplib', () => {
 
   describe('#checkQueue', () => {
     let channel;
-    before(async () => {
+    beforeEach(async () => {
       resetMock();
       const connection = await connect('amqp://localhost');
       channel = await connection.createChannel();
@@ -668,6 +668,7 @@ describe('fake amqplib', () => {
         const messages = [];
         channel.consume('event-q', (msg) => {
           messages.push(msg);
+
           channel.ack(msg);
           if (messages.length === 2) resolve(messages);
         }, {exclusive: true});
@@ -681,7 +682,20 @@ describe('fake amqplib', () => {
       expect(msgs[1], 'message #2').to.have.property('fields').with.property('routingKey', 'live.message.test');
     });
 
-    it('kills channel if trying to consume exlusive consumed queue', async () => {
+    it('kills channel if trying to consume missing queue', async () => {
+      try {
+        await channel.consume('non-event-q', (msg) => {
+          channel.ack(msg);
+        });
+      } catch (err) {
+        var consumeError = err;
+      }
+
+      expect(consumeError).to.be.ok.to.have.property('code', 404);
+      expect(consumeError.message).to.equal('Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no queue \'non-event-q\' in vhost \'/\'');
+    });
+
+    it('kills channel and connection if trying to consume exlusive consumed queue', async () => {
       await channel.bindQueue('event-q', 'event', 'live.#');
 
       const waitMessage = new Promise((resolve) => {
@@ -691,7 +705,8 @@ describe('fake amqplib', () => {
         }, {exclusive: true});
       });
 
-      const secondChannel = await connection.createChannel();
+      const secondConnection = await connect('amqp://amqp.test');
+      const secondChannel = await secondConnection.createChannel();
 
       try {
         await secondChannel.consume('event-q', (msg) => {
@@ -701,7 +716,8 @@ describe('fake amqplib', () => {
         var consumeError = err;
       }
 
-      expect(consumeError).to.be.ok.and.match(/exclusively consumed/i);
+      expect(consumeError).to.be.ok.to.have.property('code', 403);
+      expect(consumeError.message).to.equal('Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue \'event-q\' in vhost \'/\' in exclusive use"');
 
       try {
         await secondChannel.publish('event', 'live.dead', Buffer.from('DEAD'));
@@ -710,6 +726,7 @@ describe('fake amqplib', () => {
       }
 
       expect(channelError).to.be.ok.and.match(/closed/i);
+      expect(channelError).to.have.property('code', 504);
 
       await channel.publish('event', 'live.message', Buffer.from('LIVE'));
 

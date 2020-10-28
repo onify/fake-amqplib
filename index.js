@@ -3,6 +3,15 @@
 const {Broker} = require('smqp');
 const {EventEmitter} = require('events');
 
+class FakeAmqpError extends Error {
+  constructor(message, code, killChannel, killConnection) {
+    super(message);
+    this.code = code;
+    this._killChannel = killChannel;
+    this._killConnection  = killConnection;
+  }
+}
+
 const connections = [];
 
 module.exports = Fake();
@@ -31,25 +40,35 @@ function Fake() {
   function Connection(broker, ...connArgs) {
     const emitter = new EventEmitter();
     const options = connArgs.filter((a) => typeof a !== 'function');
+    let closed = false;
     const channels = [];
 
     return {
       _broker: broker,
+      get _closed() {
+        return closed;
+      },
       get _emitter() {
         return emitter;
       },
       options,
       createChannel(...args) {
-        const channel = Channel(broker);
+        if (closed) return resolveOrCallback(args.slice(-1)[0], unavailable());
+
+        const channel = Channel(broker, this);
         channels.push(channel);
         return resolveOrCallback(args.slice(-1)[0], null, channel);
       },
       createConfirmChannel(...args) {
-        const channel = Channel(broker, true);
+        if (closed) return resolveOrCallback(args.slice(-1)[0], unavailable());
+
+        const channel = Channel(broker, this, true);
         channels.push(channel);
         return resolveOrCallback(args.slice(-1)[0], null, channel);
       },
       async close(...args) {
+        closed = true;
+
         const idx = connections.indexOf(this);
         if (idx > -1) connections.splice(idx, 1);
         channels.splice(0).forEach((channel) => channel.close());
@@ -64,9 +83,13 @@ function Fake() {
         return emitter.once(...args);
       },
     };
+
+    function unavailable() {
+      return new FakeAmqpError('Connection closed: 504', 504);
+    }
   }
 
-  function Channel(broker, confirmChannel) {
+  function Channel(broker, connection, confirmChannel) {
     let closed = false, prefetch = 10000;
     const emitter = new EventEmitter();
     const channelName = 'channel-' + generateId();
@@ -108,7 +131,7 @@ function Fake() {
         return callBroker(check, ...args);
 
         function check() {
-          if (!broker.getExchange(name)) throw new Error(`exchange with name ${name} not found`);
+          if (!broker.getExchange(name)) throw new FakeAmqpError(`exchange with name ${name} not found`, 404);
           return true;
         }
       },
@@ -117,7 +140,9 @@ function Fake() {
 
         function check() {
           let queue;
-          if (!(queue = broker.getQueue(name))) throw new Error(`queue with name ${name} not found`);
+          if (!(queue = broker.getQueue(name))) {
+            throw new FakeAmqpError(`Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no queue '${name}' in vhost '/'`, 404, true);
+          }
 
           return {
             messageCount: queue.messageCount,
@@ -130,7 +155,7 @@ function Fake() {
 
         function getMessage(...getargs) {
           const q = broker.getQueue(queue);
-          if (!q) throw new Error(`queue with name ${queue} not found`);
+          if (!q) throw new FakeAmqpError(`queue with name ${queue} not found`, 404);
           return q.get(...getargs) || false;
         }
       },
@@ -168,7 +193,20 @@ function Fake() {
         return callBroker(broker.unbindQueue, ...args);
       },
       consume(queue, onMessage, options = {}, callback) {
-        return callBroker(broker.consume, queue, onMessage && handler, {...options, channelName, prefetch}, callback);
+        return callBroker(check, queue, onMessage, options, callback);
+
+        function check() {
+          const q = queue && broker.getQueue(queue);
+          if (queue && !q) {
+            throw new FakeAmqpError(`Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no queue '${queue}' in vhost '/'`, 404, true);
+          }
+          if (q && q.exclusive) {
+            throw new FakeAmqpError(`Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue '${queue}' in vhost '/' in exclusive use"`, 403, true, true);
+          }
+
+          return broker.consume(queue, onMessage && handler, {...options, channelName, prefetch});
+        }
+
         function handler(_, msg) {
           onMessage(msg);
         }
@@ -233,6 +271,7 @@ function Fake() {
       if (typeof poppedCb === 'function') args.splice(-1);
       else poppedCb = null;
 
+      if (connection._closed) throw new FakeAmqpError('Connection is closed', 504);
       if (closed) throw new Error('Channel is closed');
 
       return new Promise((resolve, reject) => {
@@ -241,9 +280,9 @@ function Fake() {
           if (poppedCb) poppedCb(null, result);
           return resolve(result);
         } catch (err) {
-          if (fn === broker.consume && /exclusively consumed/.test(err.message)) {
-            closed = true;
-          }
+          if (err._killConnection) connection.close();
+          else if (err._killChannel) closed = true;
+
           if (!poppedCb) return reject(err);
           poppedCb(err);
           return resolve();
@@ -252,6 +291,7 @@ function Fake() {
     }
   }
 }
+
 
 function resolveOrCallback(optionalCb, err, ...args) {
   if (typeof optionalCb === 'function') optionalCb(err, ...args);
