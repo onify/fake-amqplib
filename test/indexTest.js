@@ -380,6 +380,35 @@ describe('fake amqplib', () => {
     });
   });
 
+  describe('#bindQueue', () => {
+    beforeEach(resetMock);
+
+    it('separate channels can bind to exchange created by one of them', async () => {
+      const connection = await connect('amqp://localhost');
+
+      const channel1 = await connection.createChannel();
+      const channel2 = await connection.createChannel();
+
+      await channel1.assertExchange('events');
+
+      await channel2.assertQueue('event-q');
+      await channel2.bindQueue('event-q', 'events', '#');
+    });
+
+    it('separate connections to same broker can bind to exchange created by one of them', async () => {
+      const connection1 = await connect('amqp://localhost');
+      const connection2 = await connect('amqp://localhost');
+
+      const channel1 = await connection1.createChannel();
+      const channel2 = await connection2.createChannel();
+
+      await channel1.assertExchange('events');
+
+      await channel2.assertQueue('event-q');
+      await channel2.bindQueue('event-q', 'events', '#');
+    });
+  });
+
   describe('#publish', () => {
     let connection;
     beforeEach(async () => {
