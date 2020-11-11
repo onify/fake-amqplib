@@ -44,6 +44,7 @@ function Fake() {
     const channels = [];
 
     return {
+      _id: generateId(),
       _broker: broker,
       get _closed() {
         return closed;
@@ -73,7 +74,6 @@ function Fake() {
         if (idx > -1) connections.splice(idx, 1);
         channels.splice(0).forEach((channel) => channel.close());
 
-        // broker.reset();
         return resolveOrCallback(args.slice(-1)[0]);
       },
       on(...args) {
@@ -93,6 +93,9 @@ function Fake() {
     let closed = false, prefetch = 10000;
     const emitter = new EventEmitter();
     const channelName = 'channel-' + generateId();
+
+    broker.on('return', emitReturn);
+
     return {
       _broker: broker,
       get _emitter() {
@@ -113,7 +116,8 @@ function Fake() {
 
         function assertQueue(queueName, ...args) {
           const name = queueName ? queueName : 'amqp.gen-' + generateId();
-          const queue = broker.assertQueue(queueName, ...args);
+          const options = typeof args[0] === 'object' ? args.shift() : {};
+          const queue = broker.assertQueue(queueName, {...options, _connectionId: connection._id}, ...args);
           return {
             ...(!queueName ? {queue: name} : undefined),
             messageCount: queue.messageCount,
@@ -200,8 +204,11 @@ function Fake() {
           if (queue && !q) {
             throw new FakeAmqpError(`Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no queue '${queue}' in vhost '/'`, 404, true);
           }
-          if (q && q.exclusive) {
-            throw new FakeAmqpError(`Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue '${queue}' in vhost '/' in exclusive use"`, 403, true, true);
+
+          if (q) {
+            if (q.exclusive || (q.options.exclusive && q.options._connectionId !== connection._id)) {
+              throw new FakeAmqpError(`Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue '${queue}' in vhost '/' in exclusive use"`, 403, true, true);
+            }
           }
 
           return broker.consume(queue, onMessage && handler, {...options, channelName, prefetch});
@@ -216,6 +223,7 @@ function Fake() {
       },
       close(callback) {
         if (closed) return;
+        broker.off('return', emitReturn);
         const channelConsumers = broker.getConsumers().filter((f) => f.options.channelName === channelName);
         channelConsumers.forEach((c) => broker.cancel(c.consumerTag));
         closed = true;
@@ -287,6 +295,12 @@ function Fake() {
           poppedCb(err);
           return resolve();
         }
+      });
+    }
+
+    function emitReturn({fields, content, properties}) {
+      process.nextTick(() => {
+        emitter.emit('return', {fields, content, properties});
       });
     }
   }

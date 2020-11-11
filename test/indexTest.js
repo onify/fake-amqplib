@@ -330,6 +330,14 @@ describe('fake amqplib', () => {
       expect(ok).to.have.property('consumerCount');
       expect(ok).to.have.property('messageCount');
     });
+
+    it('creates exclusive queue if exclusive is passed', async () => {
+      const ok = await channel.assertQueue('excl-q', {exclusive: true});
+      expect(ok).to.be.ok;
+      expect(ok).to.not.have.property('queue');
+      expect(ok).to.have.property('consumerCount');
+      expect(ok).to.have.property('messageCount');
+    });
   });
 
   describe('#checkQueue', () => {
@@ -476,6 +484,27 @@ describe('fake amqplib', () => {
           channel.ack(message);
         });
       });
+    });
+
+    it('emits return on channel if mandatory message was not routed', async () => {
+      const channel = await connection.createChannel();
+      await channel.assertExchange('consume');
+
+      const onReturn = new Promise((resolve) => {
+        channel.on('return', (msg) => {
+          resolve(msg);
+        });
+      });
+
+      channel.publish('consume', 'test.1', Buffer.from('MSG'), {mandatory: true});
+
+      const msg = await onReturn;
+      expect(msg).to.be.ok;
+
+      expect(msg).to.have.property('fields').with.property('routingKey', 'test.1');
+      expect(msg).to.have.property('content');
+      expect(msg.content.toString()).to.equal('MSG');
+      expect(msg).to.have.property('properties');
     });
   });
 
@@ -690,7 +719,7 @@ describe('fake amqplib', () => {
       expect(msgs[2], 'message #3').to.have.property('fields').with.property('routingKey', 'live.message.test');
     });
 
-    it('with exlusive returns message in callback', async () => {
+    it('with exclusive returns message in callback', async () => {
       await channel.bindQueue('event-q', 'event', 'live.#');
 
       const waitMessages = new Promise((resolve) => {
@@ -724,7 +753,7 @@ describe('fake amqplib', () => {
       expect(consumeError.message).to.equal('Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no queue \'non-event-q\' in vhost \'/\'');
     });
 
-    it('kills channel and connection if trying to consume exlusive consumed queue', async () => {
+    it('kills channel and connection if trying to consume exclusive consumed queue', async () => {
       await channel.bindQueue('event-q', 'event', 'live.#');
 
       const waitMessage = new Promise((resolve) => {
@@ -747,6 +776,46 @@ describe('fake amqplib', () => {
 
       expect(consumeError).to.be.ok.to.have.property('code', 403);
       expect(consumeError.message).to.equal('Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue \'event-q\' in vhost \'/\' in exclusive use"');
+
+      try {
+        await secondChannel.publish('event', 'live.dead', Buffer.from('DEAD'));
+      } catch (err) {
+        var channelError = err;
+      }
+
+      expect(channelError).to.be.ok.and.match(/closed/i);
+      expect(channelError).to.have.property('code', 504);
+
+      await channel.publish('event', 'live.message', Buffer.from('LIVE'));
+
+      const msg = await waitMessage;
+      expect(msg).to.have.property('fields').with.property('routingKey', 'live.message');
+    });
+
+    it('kills channel and connection if trying to consume exclusive queue', async () => {
+      await channel.assertQueue('exclusive-q', {exclusive: true});
+      await channel.bindQueue('exclusive-q', 'event', 'live.#');
+
+      const waitMessage = new Promise((resolve) => {
+        channel.consume('exclusive-q', (msg) => {
+          channel.ack(msg);
+          resolve(msg);
+        });
+      });
+
+      const secondConnection = await connect('amqp://amqp.test');
+      const secondChannel = await secondConnection.createChannel();
+
+      try {
+        await secondChannel.consume('exclusive-q', (msg) => {
+          channel.ack(msg);
+        });
+      } catch (err) {
+        var consumeError = err;
+      }
+
+      expect(consumeError).to.be.ok.to.have.property('code', 403);
+      expect(consumeError.message).to.equal('Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue \'exclusive-q\' in vhost \'/\' in exclusive use"');
 
       try {
         await secondChannel.publish('event', 'live.dead', Buffer.from('DEAD'));
