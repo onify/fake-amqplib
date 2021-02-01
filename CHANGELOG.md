@@ -1,6 +1,10 @@
 Changelog
 =========
 
+# 0.5.1
+
+- bump `smqp@3.2`
+
 # 0.5.0
 
 - support exclusive queue and its behaviour
