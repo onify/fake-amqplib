@@ -284,7 +284,7 @@ function Fake() {
 
       return new Promise((resolve, reject) => {
         try {
-          const result = fn(...args);
+          const result = fn.call(broker, ...args);
           if (poppedCb) poppedCb(null, result);
           return resolve(result);
         } catch (err) {
