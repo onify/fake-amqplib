@@ -1,7 +1,7 @@
 Onify fake-amqplib
 ==================
 
-[![Build Status](https://travis-ci.org/onify/fake-amqplib.svg?branch=master)](https://travis-ci.org/onify/fake-amqplib)
+[![Built latest](https://github.com/onify/fake-amqplib/actions/workflows/build-latest.yaml/badge.svg)](https://github.com/onify/fake-amqplib/actions/workflows/build-latest.yaml)
 
 Mocked version of https://www.npmjs.com/package/amqplib.
 
