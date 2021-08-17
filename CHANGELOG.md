@@ -1,6 +1,15 @@
 Changelog
 =========
 
+# 0.8.0
+
+- bump `smqp@5`
+- stop building for node 10 (mocha's fault)
+
+# 0.7.0
+
+- bump `smqp@4`
+
 # 0.6.0
 
 - bump `smqp@3.2`

@@ -313,9 +313,5 @@ function resolveOrCallback(optionalCb, err, ...args) {
 }
 
 function generateId() {
-  const min = 110000;
-  const max = 9999999;
-  const rand = Math.floor(Math.random() * (max - min)) + min;
-
-  return rand.toString(16);
+  return Math.random().toString(16).substring(2, 12);
 }
