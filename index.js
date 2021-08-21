@@ -171,12 +171,12 @@ function Fake() {
       },
       publish(exchange, routingKey, content, options, callback) {
         if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
-        return confirmChannel ? publish() : callBroker(broker.publish, exchange, routingKey, content, options);
-
-        function publish() {
-          const confirm = makeConfirmCallback(callback);
-          broker.publish(exchange, routingKey, content, {...options, confirm});
+        if (confirmChannel) {
+          options = {...options, confirm: makeConfirmCallback(callback)};
         }
+
+        callBroker(broker.publish, exchange, routingKey, content, options);
+        return true;
       },
       purgeQueue(...args) {
         return callBroker(broker.purgeQueue, ...args);

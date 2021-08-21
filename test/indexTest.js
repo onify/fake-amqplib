@@ -424,16 +424,17 @@ describe('fake amqplib', () => {
       connection = await connect('amqp://localhost');
     });
 
-    it('ignores callback', async () => {
+    it('ignores callback and returns true', async () => {
       const channel = await connection.createChannel();
       await channel.assertExchange('consume');
       await channel.assertQueue('consume-q');
       await channel.bindQueue('consume-q', 'consume', '#');
 
       return new Promise((resolve, reject) => {
-        channel.publish('consume', 'test.1', Buffer.from('msg'), {type: 'test'}, {}, () => {
+        const result = channel.publish('consume', 'test.1', Buffer.from('msg'), {type: 'test'}, {}, () => {
           reject(new Error('Ignore callback'));
         });
+        expect(result, 'return value').to.be.true;
         channel.consume('consume-q', resolve);
       });
     });
@@ -475,10 +476,11 @@ describe('fake amqplib', () => {
       await channel.bindQueue('consume-q', 'consume', '#');
 
       return new Promise((resolve, reject) => {
-        channel.publish('consume', 'test.1', Buffer.from('MSG'), {}, (err, ok) => {
+        const result = channel.publish('consume', 'test.1', Buffer.from('MSG'), {}, (err, ok) => {
           if (err) return reject(err);
           resolve(ok);
         });
+        expect(result, 'return value').to.be.true;
 
         channel.get('consume-q', (err, message) => {
           channel.ack(message);
