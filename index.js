@@ -277,7 +277,7 @@ function Fake(minorVersion) {
       consume(queue, onMessage, options = {}, callback) {
         return callBroker(check, callback);
 
-        function check(callback) {
+        function check() {
           const q = queue && broker.getQueue(queue);
           if (queue && !q) {
             throw new FakeAmqpNotFoundError('queue', queue);
@@ -290,7 +290,6 @@ function Fake(minorVersion) {
           }
 
           const {consumerTag} = broker.consume(queue, onMessage && handler, {...options, channelName, prefetch});
-          if (callback) return callback(null, {consumerTag});
           return {consumerTag};
         }
 

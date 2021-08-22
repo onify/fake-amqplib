@@ -1288,6 +1288,17 @@ describe('fake amqplib', () => {
       await channel.close();
       expect(channel._broker.consumerCount).to.equal(0);
     });
+
+    it('throws if trying to invoke closed channel', async () => {
+      await channel.close();
+      try {
+        await channel.publish('events', 'event.1', Buffer.from('MSG'));
+      } catch (e) {
+        var err = e;
+      }
+
+      expect(err).to.match(/closed/);
+    });
   });
 
   describe('resetMock()', () => {
