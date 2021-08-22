@@ -1,18 +1,37 @@
-*.bak
-*.bat
-*.java
-*.log
-*.tgz
-.DS_Store
-.eslintcache
-.idea
-.project
-/.vs
-/bin
-/logs/*
-/obj/Debug
-/reindex.log
-coverage
-logs
+# Dependency directory and npm log
 node_modules
 npm-debug.log
+tmp
+
+# Code coverage results
+/coverage
+coverage*
+.nyc_output
+
+# Built package
+/*.tgz
+
+# Project files
+.tern-port
+.tern-project
+.idea
+*.iml
+.vscode
+
+# Compiled client resources
+/public/
+
+# Revision file
+config/_revision
+
+# OS X
+.DS_Store
+
+# vim
+*.swp
+*.swo
+
+# eslint
+.eslintcache
+
+*.log

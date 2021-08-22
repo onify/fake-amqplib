@@ -1,6 +1,14 @@
 Changelog
 =========
 
+# 0.8.1
+
+- be a better mimic of amqplib, some stuff didn't work at all prior to this version
+
+## Additions
+
+- Handle different behaviours between RabbitMQ versions
+
 # 0.8.0
 
 - bump `smqp@5`

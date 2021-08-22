@@ -34,3 +34,24 @@ const fakeAmqp = require('@onify/fake-amqplib');
 
 mock('amqplib', fakeAmqp);
 ```
+
+### RabbitMQ versions
+
+Some behaviour differs between versions. To specify your version of RabbitMQ you can call `setVersion(minorVersionFloatOrString)`. Default version is 3.5.
+
+Example:
+```js
+var fakeAmqp = require('@onify/fake-amqplib');
+
+// prepare your connections
+(async () => {
+  fakeAmqp.setVersion('2.2');
+  const conn2 = await fakeAmqp.connect('amqp://rabbit2-2');
+
+  fakeAmqp.setVersion('3.2');
+  const conn3 = await fakeAmqp.connect('amqp://rabbit3-1');
+
+  fakeAmqp.setVersion('3.7');
+  const conn37 = await fakeAmqp.connect('amqp://rabbit3-7');
+})()
+```
