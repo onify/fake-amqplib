@@ -55,3 +55,6 @@ var fakeAmqp = require('@onify/fake-amqplib');
   const conn37 = await fakeAmqp.connect('amqp://rabbit3-7');
 })()
 ```
+
+# Api
+- `resetMock()`: reset all connections and brokers

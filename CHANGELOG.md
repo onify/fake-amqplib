@@ -1,6 +1,11 @@
 Changelog
 =========
 
+# 0.8.2
+
+- share behind the scenes broker if connection hosts and vhost are the same
+- add new `connectSync` helper method to be able to get a connection synchronously to facilitate testing
+
 # 0.8.1
 
 - be a better mimic of amqplib, some stuff didn't work at all prior to this version

@@ -2,6 +2,7 @@
 
 const {Broker} = require('smqp');
 const {EventEmitter} = require('events');
+const {URL} = require('url');
 
 class FakeAmqpError extends Error {
   constructor(message, code, killChannel, killConnection) {
@@ -27,6 +28,7 @@ function Fake(minorVersion) {
   return {
     connections,
     resetMock,
+    connectSync,
     setVersion(minor) {
       const n = Number(minor);
       if (!isNaN(n)) defaultVersion = n;
@@ -35,11 +37,16 @@ function Fake(minorVersion) {
   };
 
   function connect(amqpUrl, ...args) {
-    const {_broker} = connections.find((conn) => conn.options[0] === amqpUrl) || {};
+    const connection = connectSync(amqpUrl, ...args);
+    return resolveOrCallback(args.slice(-1)[0], null, connection);
+  }
+
+  function connectSync(amqpUrl, ...args) {
+    const {_broker} = connections.find((conn) => compareConnectionString(conn.options[0], amqpUrl)) || {};
     const broker = _broker || Broker();
     const connection = Connection(broker, defaultVersion, amqpUrl, ...args);
     connections.push(connection);
-    return resolveOrCallback(args.slice(-1)[0], null, connection);
+    return connection;
   }
 
   function resetMock() {
@@ -394,4 +401,10 @@ function resolveOrCallback(optionalCb, err, ...args) {
 
 function generateId() {
   return Math.random().toString(16).substring(2, 12);
+}
+
+function compareConnectionString(url1, url2) {
+  const parsedUrl1 = new URL(url1);
+  const parsedUrl2 = new URL(url2);
+  return parsedUrl1.host === parsedUrl2.host && parsedUrl1.pathname === parsedUrl2.pathname;
 }
