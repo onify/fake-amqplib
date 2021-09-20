@@ -56,5 +56,12 @@ var fakeAmqp = require('@onify/fake-amqplib');
 })()
 ```
 
-# Api
+### Fake api
+
+List of available methods and a property
+
+- `connections`: property with all faked connections
+- `connectSync(amqpurl[, ...otherOptions])`: helper method to create a connection without waiting for promise to resolve - synchronous
 - `resetMock()`: reset all connections and brokers
+- `setVersion(minor)`: next connection will be to a amqp of a specific version
+- `async connect(amqpurl[, ...otherOptions, callback])`: make a fake connection
