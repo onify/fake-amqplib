@@ -213,12 +213,13 @@ function Fake(minorVersion) {
       },
       publish(exchange, routingKey, content, options, callback) {
         if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
-        if (confirmChannel) {
-          options = {...options, confirm: makeConfirmCallback(callback)};
-        }
+        const args = [broker.publish, exchange, routingKey, content];
+
+        if (confirmChannel) args.push(...addConfirmCallback(options, callback));
+        else args.push(options);
 
         this.checkExchange(exchange).then(() => {
-          return callBroker(broker.publish, exchange, routingKey, content, options);
+          return callBroker(...args);
         }).catch((err) => {
           emitter.emit('error', err);
         });
@@ -236,12 +237,14 @@ function Fake(minorVersion) {
       },
       sendToQueue(queue, content, options, callback) {
         if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
-        if (confirmChannel) {
-          options = {...options, confirm: makeConfirmCallback(callback)};
-        }
+
+        const args = [broker.sendToQueue, queue, content];
+
+        if (confirmChannel) args.push(...addConfirmCallback(options, callback));
+        else args.push(options);
 
         this.checkQueue(queue).then(() => {
-          return callBroker(broker.sendToQueue, queue, content, options);
+          return callBroker(...args);
         }).catch((err) => {
           emitter.emit('error', err);
         });
@@ -336,30 +339,37 @@ function Fake(minorVersion) {
       },
     };
 
-    function makeConfirmCallback(callback) {
+    function addConfirmCallback(options, callback) {
       const confirm = 'msg.' + generateId();
       const consumerTag = 'ct-' + confirm;
+      options = {...options, confirm};
+
       broker.on('message.*', onConsumeMessage, {consumerTag});
 
+      let undelivered;
       function onConsumeMessage(event) {
-        if (event.properties.confirm !== confirm) return;
-
+        if (event.properties && event.properties.confirm !== confirm) return;
         switch(event.name) {
           case 'message.nack':
-            return confirmCallback(new Error('message nacked'));
           case 'message.undelivered':
-            return confirmCallback(new Error('message undelivered'));
-          case 'message.ack':
-            return confirmCallback(null, true);
-        }
-
-        function confirmCallback(err, ok) {
-          broker.off('message.*', {consumerTag});
-          callback(err, ok);
+            undelivered = event.name;
+            break;
         }
       }
 
-      return confirm;
+      function confirmCallback() {
+        broker.off('message.*', consumerTag);
+        switch (undelivered) {
+          case 'message.nack':
+            return callback(new Error('message nacked'));
+          case 'message.undelivered':
+            throw callback(new Error('message undelivered'));
+          default:
+            return callback(null, true);
+        }
+      }
+
+      return [options, confirmCallback];
     }
 
     function callBroker(fn, ...args) {

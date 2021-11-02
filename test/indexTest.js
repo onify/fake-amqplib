@@ -608,6 +608,24 @@ describe('fake amqplib', () => {
       });
     });
 
+    it('confirm channel calls callback when message arrives in queue', async () => {
+      const channel = await connection.createConfirmChannel();
+      await channel.assertExchange('consume');
+      await channel.assertQueue('consume-q');
+      await channel.bindQueue('consume-q', 'consume', '#');
+
+      await new Promise((resolve, reject) => {
+        const result = channel.publish('consume', 'test.1', Buffer.from('MSG'), {}, (err, ok) => {
+          if (err) return reject(err);
+          resolve(ok);
+        });
+        expect(result, 'return value').to.be.true;
+      });
+
+      const msg = await channel.get('consume-q');
+      expect(msg).to.be.ok;
+    });
+
     it('confirm channel calls callback with error if message was undeliverable', async () => {
       const channel = await connection.createConfirmChannel();
       await channel.assertExchange('consume');
@@ -620,40 +638,29 @@ describe('fake amqplib', () => {
       });
     });
 
-    it('confirm channel calls callback with error message was nacked', async () => {
+    it('confirm channel calls callback with error if message was nacked by queue for some reason', async () => {
       const channel = await connection.createConfirmChannel();
       await channel.assertExchange('consume');
-      await channel.assertQueue('consume-q');
+      await channel.assertQueue('consume-q', {maxLength: 0});
       await channel.bindQueue('consume-q', 'consume', '#');
 
-      channel.consume('consume-q', (message) => {
-        channel.nack(message, false, false);
-      });
-
       return new Promise((resolve, reject) => {
-        channel.publish('consume', 'test.1', Buffer.from('MSG'), {}, (err, ok) => {
+        channel.publish('consume', 'test.2', Buffer.from('MSG'), {}, (err, ok) => {
           if (ok) return reject(new Error('is ok'));
           resolve(err);
         });
       });
     });
 
-    it('confirm channel calls callback when message is acked', async () => {
-      const channel = await connection.createConfirmChannel();
-      await channel.assertExchange('consume');
-      await channel.assertQueue('consume-q');
-      await channel.bindQueue('consume-q', 'consume', '#');
+    it('confirm channel calls callback once', (done) => {
+      connection.createConfirmChannel().then(async (channel) => {
+        await channel.assertExchange('consume');
+        await channel.assertQueue('consume-q');
+        await channel.bindQueue('consume-q', 'consume', '#');
+        channel.publish('consume', 'test.1', Buffer.from('MSG'), {}, done);
 
-      channel.consume('consume-q', (message) => {
-        channel.ack(message);
-      });
-
-      return new Promise((resolve, reject) => {
-        const result = channel.publish('consume', 'test.1', Buffer.from('MSG'), {}, (err, ok) => {
-          if (err) return reject(err);
-          resolve(ok);
-        });
-        expect(result, 'return value').to.be.true;
+        const msg = await channel.get('consume-q');
+        await channel.nack(msg);
       });
     });
 
@@ -729,45 +736,9 @@ describe('fake amqplib', () => {
       });
     });
 
-    it('confirm channel calls callback with error message was nacked', async () => {
+    it('confirm channel calls callback when message arrives in queue', async () => {
       const channel = await connection.createConfirmChannel();
       await channel.assertQueue('consume-q');
-
-      channel.consume('consume-q', (message) => {
-        channel.nack(message, false, false);
-      });
-
-      return new Promise((resolve, reject) => {
-        channel.sendToQueue('consume-q', Buffer.from('MSG'), {}, (err, ok) => {
-          if (ok) return reject(new Error('is ok'));
-          resolve(err);
-        });
-      });
-    });
-
-    it('confirm channel calls callback with error message was rejected', async () => {
-      const channel = await connection.createConfirmChannel();
-      await channel.assertQueue('consume-q');
-
-      channel.consume('consume-q', (message) => {
-        channel.reject(message, false, false);
-      });
-
-      return new Promise((resolve, reject) => {
-        channel.sendToQueue('consume-q', Buffer.from('MSG'), {}, (err, ok) => {
-          if (ok) return reject(new Error('is ok'));
-          resolve(err);
-        });
-      });
-    });
-
-    it('confirm channel calls callback when message was acked', async () => {
-      const channel = await connection.createConfirmChannel();
-      await channel.assertQueue('consume-q');
-
-      channel.consume('consume-q', (message) => {
-        channel.ack(message);
-      });
 
       return new Promise((resolve, reject) => {
         const result = channel.sendToQueue('consume-q', Buffer.from('MSG'), {}, (err, ok) => {
@@ -775,6 +746,28 @@ describe('fake amqplib', () => {
           resolve(ok);
         });
         expect(result, 'return value').to.be.true;
+      });
+    });
+
+    it('confirm channel calls callback with error if message was nacked by queue for some reason', async () => {
+      const channel = await connection.createConfirmChannel();
+      await channel.assertQueue('consume-q', {maxLength: 0});
+
+      return new Promise((resolve, reject) => {
+        channel.sendToQueue('consume-q', Buffer.from('MSG'), {}, (err, ok) => {
+          if (ok) return reject(new Error('is ok'));
+          resolve(err);
+        });
+      });
+    });
+
+    it('confirm channel calls callback once', (done) => {
+      connection.createConfirmChannel().then(async (channel) => {
+        await channel.assertQueue('consume-q');
+        await channel.sendToQueue('consume-q', Buffer.from('MSG'), {}, done);
+
+        const msg = await channel.get('consume-q');
+        await channel.nack(msg);
       });
     });
 
