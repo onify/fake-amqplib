@@ -698,6 +698,18 @@ describe('fake amqplib', () => {
       }).catch(done);
     });
 
+    it('publish to empty string sends message to queue with routingKey name', async () => {
+      const channel = await connection.createChannel();
+      await channel.assertQueue('empty');
+      expect(channel.publish('', 'empty', Buffer.from('MSG'))).to.be.true;
+
+      return new Promise((resolve) => {
+        channel.consume('empty', () => {
+          resolve();
+        });
+      });
+    });
+
     it('throws TypeError if content is not a Buffer', async () => {
       const channel = await connection.createChannel();
       expect(() => {
@@ -798,7 +810,9 @@ describe('fake amqplib', () => {
       channel.get('event-q', (err, msg) => {
         if (err) return done(err);
         expect(msg).to.be.ok;
-        expect(msg).to.to.have.property('content');
+        expect(msg).to.to.have.property('content').that.deep.equal(Buffer.from('MSG'));
+        expect(msg).to.to.have.property('fields');
+        expect(msg).to.to.have.property('properties').with.property('messageId');
         done();
       });
     });
@@ -869,7 +883,11 @@ describe('fake amqplib', () => {
       channel.bindQueue('event-q', 'event', '#').then(() => {
         channel.consume('event-q', (msg) => {
           expect(msg).to.be.ok;
-          expect(msg).to.to.have.property('content');
+          expect(msg).to.to.have.property('content').that.deep.equal(Buffer.from('MSG'));
+          expect(msg).to.to.have.property('fields').with.property('routingKey', 'test.message');
+          expect(msg).to.to.have.property('fields').with.property('consumerTag');
+          expect(msg).to.to.have.property('properties').with.property('messageId');
+          expect(msg.properties).to.to.have.property('timestamp');
           done();
         });
 

@@ -4,6 +4,8 @@ const {Broker} = require('smqp');
 const {EventEmitter} = require('events');
 const {URL} = require('url');
 
+const smqpSymbol = Symbol.for('smqp');
+
 class FakeAmqpError extends Error {
   constructor(message, code, killChannel, killConnection) {
     super(message);
@@ -190,7 +192,9 @@ function Fake(minorVersion) {
         function getMessage(...getargs) {
           const q = broker.getQueue(queue);
           if (!q) throw new FakeAmqpNotFoundError('queue');
-          return q.get(...getargs) || false;
+          const msg = q.get(...getargs) || false;
+          if (!msg) return msg;
+          return new Message(msg);
         }
       },
       deleteExchange(exchange, ...args) {
@@ -213,6 +217,8 @@ function Fake(minorVersion) {
       },
       publish(exchange, routingKey, content, options, callback) {
         if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
+        if (exchange === '') return this.sendToQueue(routingKey, content, options, callback);
+
         const args = [broker.publish, exchange, routingKey, content];
 
         if (confirmChannel) args.push(...addConfirmCallback(options, callback));
@@ -304,7 +310,7 @@ function Fake(minorVersion) {
         }
 
         function handler(_, msg) {
-          onMessage(msg);
+          onMessage(new Message(msg));
         }
       },
       cancel(consumerTag, ...args) {
@@ -319,15 +325,23 @@ function Fake(minorVersion) {
         emitter.emit('close');
         return resolveOrCallback(callback);
       },
-      ack: broker.ack,
-      ackAll: broker.ackAll,
+      ack(message, ...args) {
+        broker.ack(message[smqpSymbol], ...args);
+      },
+      ackAll(message, ...args) {
+        broker.ackAll(message[smqpSymbol], ...args);
+      },
       ...(version >= 2.3 ? {
         nack(message, ...args) {
-          return broker.nack(message, ...args);
+          return broker.nack(message[smqpSymbol], ...args);
         }
       } : undefined),
-      reject: broker.reject,
-      nackAll: broker.nackAll,
+      reject(message, ...args) {
+        broker.reject(message[smqpSymbol], ...args);
+      },
+      nackAll(message, ...args) {
+        broker.nackAll(message[smqpSymbol], ...args);
+      },
       prefetch(val) {
         prefetch = val;
       },
@@ -417,4 +431,11 @@ function compareConnectionString(url1, url2) {
   const parsedUrl1 = new URL(url1);
   const parsedUrl2 = new URL(url2);
   return parsedUrl1.host === parsedUrl2.host && parsedUrl1.pathname === parsedUrl2.pathname;
+}
+
+function Message(smqpMessage) {
+  this[smqpSymbol] = smqpMessage;
+  this.content = smqpMessage.content;
+  this.fields = smqpMessage.fields;
+  this.properties = smqpMessage.properties;
 }

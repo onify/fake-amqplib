@@ -1,6 +1,12 @@
 Changelog
 =========
 
+# 0.8.3
+
+- Call confirm channel callback when the message is queued, not when it is consumed!
+- implement publish with empty string special case
+- hide some internal props from message
+
 # 0.8.2
 
 - share behind the scenes broker if connection hosts and vhost are the same
