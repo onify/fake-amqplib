@@ -328,8 +328,8 @@ function Fake(minorVersion) {
       ack(message, ...args) {
         broker.ack(message[smqpSymbol], ...args);
       },
-      ackAll(message, ...args) {
-        broker.ackAll(message[smqpSymbol], ...args);
+      ackAll(...args) {
+        broker.ackAll(...args);
       },
       ...(version >= 2.3 ? {
         nack(message, ...args) {
@@ -339,8 +339,8 @@ function Fake(minorVersion) {
       reject(message, ...args) {
         broker.reject(message[smqpSymbol], ...args);
       },
-      nackAll(message, ...args) {
-        broker.nackAll(message[smqpSymbol], ...args);
+      nackAll(...args) {
+        broker.nackAll(...args);
       },
       prefetch(val) {
         prefetch = val;

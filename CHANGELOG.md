@@ -1,6 +1,10 @@
 Changelog
 =========
 
+# 0.8.4
+
+- ack/nack all fix
+
 # 0.8.3
 
 - Call confirm channel callback when the message is queued, not when it is consumed!
