@@ -1,7 +1,6 @@
 'use strict';
 
 const {connect, resetMock, setVersion} = require('..');
-const {expect} = require('chai');
 
 describe('different behaviour between RabbitMQ versions', () => {
   after(() => {

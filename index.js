@@ -328,8 +328,9 @@ function Fake(minorVersion) {
       ack(message, ...args) {
         broker.ack(message[smqpSymbol], ...args);
       },
-      ackAll(...args) {
-        broker.ackAll(...args);
+      ackAll() {
+        const consumers = broker.getConsumers().filter(({options}) => options.channelName === channelName);
+        consumers.forEach((c) => broker.getConsumer(c.consumerTag).ackAll());
       },
       ...(version >= 2.3 ? {
         nack(message, ...args) {
@@ -339,8 +340,9 @@ function Fake(minorVersion) {
       reject(message, ...args) {
         broker.reject(message[smqpSymbol], ...args);
       },
-      nackAll(...args) {
-        broker.nackAll(...args);
+      nackAll(requeue = false) {
+        const consumers = broker.getConsumers().filter(({options}) => options.channelName === channelName);
+        consumers.forEach((c) => broker.getConsumer(c.consumerTag).nackAll(requeue));
       },
       prefetch(val) {
         prefetch = val;

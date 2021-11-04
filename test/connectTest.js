@@ -1,7 +1,6 @@
 'use strict';
 
 const {connect, connectSync, connections, resetMock} = require('..');
-const {expect} = require('chai');
 const {EventEmitter} = require('events');
 
 describe('fake amqplib connections', () => {
