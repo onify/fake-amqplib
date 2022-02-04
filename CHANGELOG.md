@@ -1,6 +1,11 @@
 Changelog
 =========
 
+# 0.9.0
+
+- support url object
+- smqp@6
+
 # 0.8.5
 
 - ack/nack all only cares about messages consumed by channel, previously everything was gone

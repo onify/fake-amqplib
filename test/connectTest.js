@@ -21,9 +21,54 @@ describe('fake amqplib connections', () => {
       });
     });
 
+    it('no amqpUrl defaults to amqp://localhost:5672/', async () => {
+      const conn = await connect();
+      expect(conn._url.toString()).to.equal('amqp://localhost:5672/');
+    });
+
+    it('username only defaults defaults hostname etc', async () => {
+      const conn = await connect({username: 'guest'});
+      expect(conn._url.toString()).to.equal('amqp://guest@localhost:5672/');
+    });
+
+    it('tuning parameters only defaults hostname etc', async () => {
+      const conn = await connect({locale: 'sv_SE'});
+      expect(conn._url.toString()).to.equal('amqp://localhost:5672/?locale=sv_SE');
+    });
+
     it('connection with the same amqpUrl shares broker', async () => {
       const conn1 = await connect('amqp://testrabbit:5672');
       const conn2 = await connect('amqp://testrabbit:5672');
+
+      expect(conn1._broker === conn2._broker).to.be.true;
+      expect(conn1 === conn2, 'same connection').to.be.false;
+    });
+
+    it('connection with the same new URL(amqpUrl) shares broker', async () => {
+      const conn1 = await connect(new URL('amqp://testrabbit:5672'));
+      const conn2 = await connect(new URL('amqp://testrabbit:5672'));
+
+      expect(conn1._broker === conn2._broker).to.be.true;
+      expect(conn1 === conn2, 'same connection').to.be.false;
+    });
+
+    it('connection with the equal amqpUrl object shares broker', async () => {
+      const connObj = {
+        protocol: 'amqp',
+        hostname: 'localhost',
+        port: 15672,
+        username: 'guest',
+        password: 'guest',
+        locale: 'en_US',
+        frameMax: 0,
+        heartbeat: 0,
+        vhost: '/myhost',
+      };
+
+      const conn1 = await connect({...connObj});
+      expect(conn1._url.toString()).to.equal('amqp://guest:guest@localhost:15672/myhost?locale=en_US&frameMax=0&heartbeat=0');
+
+      const conn2 = await connect({...connObj});
 
       expect(conn1._broker === conn2._broker).to.be.true;
       expect(conn1 === conn2, 'same connection').to.be.false;
@@ -177,6 +222,24 @@ describe('fake amqplib connections', () => {
         });
 
         connection.close();
+      });
+    });
+
+    it('emits close once', (done) => {
+      connect('amqp://conn.test').then((connection) => {
+        connection.on('close', () => {
+          done();
+        });
+
+        connection.close();
+        connection.close();
+      });
+    });
+
+    it('calls callback if closed twice', (done) => {
+      connect('amqp://conn.test').then((connection) => {
+        connection.close();
+        connection.close(done);
       });
     });
 

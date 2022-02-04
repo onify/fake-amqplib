@@ -2,7 +2,7 @@
 
 const {Broker} = require('smqp');
 const {EventEmitter} = require('events');
-const {URL} = require('url');
+const {URL, format: urlFormat} = require('url');
 
 const smqpSymbol = Symbol.for('smqp');
 
@@ -16,8 +16,8 @@ class FakeAmqpError extends Error {
 }
 
 class FakeAmqpNotFoundError extends FakeAmqpError {
-  constructor(type, name, killConnection = false) {
-    super(`Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no ${type} '${name}' in vhost '/'`, 404, true, killConnection);
+  constructor(type, name, vhost, killConnection = false) {
+    super(`Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no ${type} '${name}' in vhost '${vhost || '/'}'`, 404, true, killConnection);
   }
 }
 
@@ -44,7 +44,7 @@ function Fake(minorVersion) {
   }
 
   function connectSync(amqpUrl, ...args) {
-    const {_broker} = connections.find((conn) => compareConnectionString(conn.options[0], amqpUrl)) || {};
+    const {_broker} = connections.find((conn) => compareConnectionString(conn._url, amqpUrl)) || {};
     const broker = _broker || Broker();
     const connection = Connection(broker, defaultVersion, amqpUrl, ...args);
     connections.push(connection);
@@ -57,16 +57,18 @@ function Fake(minorVersion) {
     }
   }
 
-  function Connection(broker, version, ...connArgs) {
+  function Connection(broker, version, amqpUrl, ...connArgs) {
     const emitter = new EventEmitter();
     const options = connArgs.filter((a) => typeof a !== 'function');
     let closed = false;
     const channels = [];
+    const url = normalizeAmqpUrl(amqpUrl);
 
     return {
       _id: generateId(),
       _broker: broker,
       _version: version,
+      _url: url,
       get _closed() {
         return closed;
       },
@@ -89,6 +91,7 @@ function Fake(minorVersion) {
         return resolveOrCallback(args.slice(-1)[0], null, channel);
       },
       async close(...args) {
+        if (closed) return resolveOrCallback(args.slice(-1)[0]);
         closed = true;
 
         const idx = connections.indexOf(this);
@@ -167,7 +170,7 @@ function Fake(minorVersion) {
         return callBroker(check, ...args);
 
         function check() {
-          if (!broker.getExchange(name)) throw new FakeAmqpError(`Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no exchange '${name}' in vhost '/'`, 404, true);
+          if (!broker.getExchange(name)) throw new FakeAmqpNotFoundError('exchange', name, connection._url.pathname);
           return true;
         }
       },
@@ -177,7 +180,7 @@ function Fake(minorVersion) {
         function check() {
           let queue;
           if (!(queue = broker.getQueue(name))) {
-            throw new FakeAmqpNotFoundError('queue', name);
+            throw new FakeAmqpNotFoundError('queue', name, connection._url.pathname);
           }
 
           return {
@@ -191,7 +194,7 @@ function Fake(minorVersion) {
 
         function getMessage(...getargs) {
           const q = broker.getQueue(queue);
-          if (!q) throw new FakeAmqpNotFoundError('queue');
+          if (!q) throw new FakeAmqpNotFoundError('queue', queue, connection._url.pathname);
           const msg = q.get(...getargs) || false;
           if (!msg) return msg;
           return new Message(msg);
@@ -202,7 +205,7 @@ function Fake(minorVersion) {
 
         function check() {
           const result = broker.deleteExchange(exchange, ...args);
-          if (!result && version < 3.2) throw new FakeAmqpNotFoundError('exchange', exchange);
+          if (!result && version < 3.2) throw new FakeAmqpNotFoundError('exchange', exchange, connection._url.pathname);
           return result;
         }
       },
@@ -211,7 +214,7 @@ function Fake(minorVersion) {
 
         function check() {
           const result = broker.deleteQueue(queue, ...args);
-          if (!result && version < 3.2) throw new FakeAmqpNotFoundError('queue', queue);
+          if (!result && version < 3.2) throw new FakeAmqpNotFoundError('queue', queue, connection._url.pathname);
           return result;
         }
       },
@@ -237,7 +240,7 @@ function Fake(minorVersion) {
 
         function check() {
           const result = broker.purgeQueue(queue);
-          if (!result && version < 3.2) throw new FakeAmqpNotFoundError('queue', queue);
+          if (!result && version < 3.2) throw new FakeAmqpNotFoundError('queue', queue, connection._url.pathname);
           return result === undefined ? undefined : {messageCount: result};
         }
       },
@@ -268,7 +271,7 @@ function Fake(minorVersion) {
           if (!exchange) throw new FakeAmqpNotFoundError('exchange', source);
 
           const result = broker.unbindExchange(source, destination, pattern);
-          if (!result && version <= 3.2) throw new FakeAmqpNotFoundError('binding', pattern);
+          if (!result && version <= 3.2) throw new FakeAmqpNotFoundError('binding', pattern, connection._url.pathname);
 
           return true;
         }
@@ -284,7 +287,7 @@ function Fake(minorVersion) {
           if (!exchange) throw new FakeAmqpNotFoundError('exchange', source);
 
           const binding = exchange.getBinding(queue, pattern);
-          if (!binding && version <= 3.2) throw new FakeAmqpNotFoundError('binding', pattern, version < 3.2);
+          if (!binding && version <= 3.2) throw new FakeAmqpNotFoundError('binding', pattern, connection._url.pathname, version < 3.2);
 
           broker.unbindQueue(queue, source, pattern);
           return true;
@@ -295,14 +298,12 @@ function Fake(minorVersion) {
 
         function check() {
           const q = queue && broker.getQueue(queue);
-          if (queue && !q) {
-            throw new FakeAmqpNotFoundError('queue', queue);
+          if (!q) {
+            throw new FakeAmqpNotFoundError('queue', queue, connection._url.pathname);
           }
 
-          if (q) {
-            if (q.exclusive || (q.options.exclusive && q.options._connectionId !== connection._id)) {
-              throw new FakeAmqpError(`Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue '${queue}' in vhost '/' in exclusive use"`, 403, true, true);
-            }
+          if (q.exclusive || (q.options.exclusive && q.options._connectionId !== connection._id)) {
+            throw new FakeAmqpError(`Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue '${queue}' in vhost '${connection._url.pathname}' in exclusive use"`, 403, true, true);
           }
 
           const {consumerTag} = broker.consume(queue, onMessage && handler, {...options, channelName, prefetch});
@@ -430,8 +431,9 @@ function generateId() {
 }
 
 function compareConnectionString(url1, url2) {
-  const parsedUrl1 = new URL(url1);
-  const parsedUrl2 = new URL(url2);
+  const parsedUrl1 = normalizeAmqpUrl(url1);
+  const parsedUrl2 = normalizeAmqpUrl(url2);
+
   return parsedUrl1.host === parsedUrl2.host && parsedUrl1.pathname === parsedUrl2.pathname;
 }
 
@@ -440,4 +442,47 @@ function Message(smqpMessage) {
   this.content = smqpMessage.content;
   this.fields = smqpMessage.fields;
   this.properties = smqpMessage.properties;
+}
+
+function normalizeAmqpUrl(url) {
+  if (!url) return url = new URL('amqp://localhost:5672/');
+  if (typeof url === 'string') url = new URL(url);
+
+  if (!(url instanceof URL)) {
+    const {
+      protocol = 'amqp',
+      hostname = 'localhost',
+      port = 5672,
+      vhost = '/',
+      username,
+      password,
+      ...rest
+    } = url;
+    let auth = username;
+    if (auth && password) {
+      auth += ':' + password;
+    }
+    url = new URL(urlFormat({
+      protocol,
+      hostname,
+      port,
+      pathname: vhost,
+      slashes: true,
+      auth,
+    }));
+
+    for (const k in rest) {
+      switch (k) {
+        case 'locale':
+        case 'frameMax':
+        case 'heartbeat':
+          url.searchParams.set(k, rest[k]);
+          break;
+      }
+    }
+  }
+
+  if (!url.port) url.port = 5672;
+  if (!url.pathname) url.pathname = '/';
+  return url;
 }

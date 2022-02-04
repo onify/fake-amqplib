@@ -704,7 +704,7 @@ describe('channel', () => {
     let connection, channel;
     beforeEach(async () => {
       resetMock();
-      connection = await connect('amqp://amqp.test');
+      connection = await connect('amqp://amqp.test/myhost');
       channel = await connection.createChannel();
       await channel.assertExchange('event');
       await channel.assertQueue('event-q');
@@ -814,7 +814,19 @@ describe('channel', () => {
       }
 
       expect(consumeError).to.be.ok.to.have.property('code', 404);
-      expect(consumeError.message).to.equal('Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no queue \'non-event-q\' in vhost \'/\'');
+      expect(consumeError.message).to.equal('Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no queue \'non-event-q\' in vhost \'/myhost\'');
+    });
+
+    it('kills channel if trying to consume falsy queue', async () => {
+      try {
+        await channel.consume('', (msg) => {
+          channel.ack(msg);
+        });
+      } catch (err) {
+        var consumeError = err;
+      }
+
+      expect(consumeError).to.be.ok.to.have.property('code', 404);
     });
 
     it('kills channel and connection if trying to consume exclusive consumed queue', async () => {
@@ -827,7 +839,7 @@ describe('channel', () => {
         }, {exclusive: true});
       });
 
-      const secondConnection = await connect('amqp://amqp.test');
+      const secondConnection = await connect(connection._url);
       const secondChannel = await secondConnection.createChannel();
 
       try {
@@ -839,7 +851,7 @@ describe('channel', () => {
       }
 
       expect(consumeError).to.be.ok.to.have.property('code', 403);
-      expect(consumeError.message).to.equal('Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue \'event-q\' in vhost \'/\' in exclusive use"');
+      expect(consumeError.message).to.equal('Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue \'event-q\' in vhost \'/myhost\' in exclusive use"');
 
       try {
         await secondChannel.publish('event', 'live.dead', Buffer.from('DEAD'));
@@ -867,7 +879,7 @@ describe('channel', () => {
         });
       });
 
-      const secondConnection = await connect('amqp://amqp.test');
+      const secondConnection = await connect(connection._url);
       const secondChannel = await secondConnection.createChannel();
 
       try {
@@ -879,7 +891,7 @@ describe('channel', () => {
       }
 
       expect(consumeError).to.be.ok.to.have.property('code', 403);
-      expect(consumeError.message).to.equal('Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue \'exclusive-q\' in vhost \'/\' in exclusive use"');
+      expect(consumeError.message).to.equal('Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue \'exclusive-q\' in vhost \'/myhost\' in exclusive use"');
 
       try {
         await secondChannel.publish('event', 'live.dead', Buffer.from('DEAD'));
@@ -1003,6 +1015,14 @@ describe('channel', () => {
       channel.once('close', () => {
         done();
       });
+      channel.close();
+    });
+
+    it('emits close once', (done) => {
+      channel.on('close', () => {
+        done();
+      });
+      channel.close();
       channel.close();
     });
 
