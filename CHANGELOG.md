@@ -3,7 +3,7 @@ Changelog
 
 # 0.9.0
 
-- support url object
+- support connecting with urlish object
 - smqp@6
 
 # 0.8.5
