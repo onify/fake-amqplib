@@ -1,6 +1,10 @@
 Changelog
 =========
 
+# 0.9.1
+
+- Always return queue name when asserting queue
+
 # 0.9.0
 
 - support connecting with urlish object
