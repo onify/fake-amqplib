@@ -1,6 +1,6 @@
 {
   "name": "@onify/fake-amqplib",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Fake amqplib",
   "main": "index.js",
   "scripts": {

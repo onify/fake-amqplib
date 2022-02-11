@@ -148,9 +148,9 @@ function Fake(minorVersion) {
         function assertQueue(queueName, ...args) {
           const name = queueName ? queueName : 'amqp.gen-' + generateId();
           const options = typeof args[0] === 'object' ? args.shift() : {};
-          const queue = broker.assertQueue(queueName, {...options, _connectionId: connection._id}, ...args);
+          const queue = broker.assertQueue(name, {...options, _connectionId: connection._id}, ...args);
           return {
-            ...(!queueName ? {queue: name} : undefined),
+            queue: name,
             messageCount: queue.messageCount,
             consumerCount: queue.consumerCount,
           };

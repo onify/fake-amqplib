@@ -78,7 +78,7 @@ describe('channel', () => {
     it('creates named queue', async () => {
       const ok = await channel.assertQueue('event-q');
       expect(ok).to.be.ok;
-      expect(ok).to.not.have.property('queue');
+      expect(ok).to.have.property('queue', 'event-q');
       expect(ok).to.have.property('consumerCount');
       expect(ok).to.have.property('messageCount');
     });
@@ -87,27 +87,49 @@ describe('channel', () => {
       channel.assertQueue('eventcb-q', (err, ok) => {
         if (err) return done(err);
         expect(ok).to.be.ok;
-        expect(ok).to.not.have.property('queue');
+        expect(ok).to.have.property('queue', 'eventcb-q');
         expect(ok).to.have.property('consumerCount');
         expect(ok).to.have.property('messageCount');
         done();
       });
     });
 
-    it('creates server named queue if name is falsy', async () => {
+    it('creates server named functional queue if name is falsy', async () => {
       const ok = await channel.assertQueue('');
       expect(ok).to.be.ok;
-      expect(ok).to.have.property('queue').that.is.ok;
+      expect(ok.queue).to.match(/^amqp.gen-.+/);
       expect(ok).to.have.property('consumerCount');
       expect(ok).to.have.property('messageCount');
+
+      await channel.sendToQueue(ok.queue, Buffer.from('MSG'));
+      const msg = await channel.get(ok.queue);
+      expect(msg.content.toString()).to.equal('MSG');
     });
 
     it('creates exclusive queue if exclusive is passed', async () => {
       const ok = await channel.assertQueue('excl-q', {exclusive: true});
       expect(ok).to.be.ok;
-      expect(ok).to.not.have.property('queue');
+      expect(ok).to.have.property('queue', 'excl-q');
       expect(ok).to.have.property('consumerCount');
       expect(ok).to.have.property('messageCount');
+    });
+
+    it('called with undefined returns functional queue with random name', async () => {
+      const ok = await channel.assertQueue(undefined);
+      expect(ok.queue).to.match(/^amqp.gen-.+/);
+
+      await channel.sendToQueue(ok.queue, Buffer.from('MSG'));
+      const msg = await channel.get(ok.queue);
+      expect(msg.content.toString()).to.equal('MSG');
+    });
+
+    it('called with null returns functional queue with random name', async () => {
+      const ok = await channel.assertQueue(null);
+      expect(ok.queue).to.match(/^amqp.gen-.+/);
+
+      await channel.sendToQueue(ok.queue, Buffer.from('MSG'));
+      const msg = await channel.get(ok.queue);
+      expect(msg.content.toString()).to.equal('MSG');
     });
   });
 
