@@ -1,6 +1,6 @@
 {
   "name": "@onify/fake-amqplib",
-  "version": "0.9.1",
+  "version": "1.0.0",
   "description": "Fake amqplib",
   "main": "index.js",
   "scripts": {
@@ -21,7 +21,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "smqp": "^6.0.0"
+    "smqp": "^6.1.0"
   },
   "keywords": [
     "fake",
@@ -31,9 +31,9 @@
     "rabbitmq"
   ],
   "devDependencies": {
-    "chai": "^4.3.6",
-    "eslint": "^7.32.0",
-    "mocha": "^9.2.0",
+    "chai": "^4.3.7",
+    "eslint": "^8.27.0",
+    "mocha": "^10.1.0",
     "nyc": "^15.1.0"
   },
   "files": [

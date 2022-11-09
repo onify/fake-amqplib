@@ -90,7 +90,7 @@ function Fake(minorVersion) {
         channels.push(channel);
         return resolveOrCallback(args.slice(-1)[0], null, channel);
       },
-      async close(...args) {
+      close(...args) {
         if (closed) return resolveOrCallback(args.slice(-1)[0]);
         closed = true;
 
@@ -336,7 +336,7 @@ function Fake(minorVersion) {
       ...(version >= 2.3 ? {
         nack(message, ...args) {
           return broker.nack(message[smqpSymbol], ...args);
-        }
+        },
       } : undefined),
       reject(message, ...args) {
         broker.reject(message[smqpSymbol], ...args);

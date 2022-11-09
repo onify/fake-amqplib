@@ -205,7 +205,7 @@ describe('channel', () => {
       });
     });
 
-    it('ignored if not found', async () => {
+    it('ignored if not found', () => {
       return channel.deleteQueue('notfound');
     });
   });
@@ -234,7 +234,7 @@ describe('channel', () => {
       });
     });
 
-    it('ignored if not found', async () => {
+    it('ignored if not found', () => {
       return channel.purgeQueue('notfound');
     });
   });
@@ -979,7 +979,7 @@ describe('channel', () => {
       }));
 
       const messages = [];
-      channel.consume('event-q', async (msg) => {
+      channel.consume('event-q', (msg) => {
         messages.push(msg);
       });
 
@@ -1005,7 +1005,7 @@ describe('channel', () => {
       }));
 
       const messages = [];
-      channel.consume('event-q', async (msg) => {
+      channel.consume('event-q', (msg) => {
         messages.push(msg);
       });
 

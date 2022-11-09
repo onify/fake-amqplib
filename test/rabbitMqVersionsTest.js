@@ -198,7 +198,7 @@ describe('different behaviour between RabbitMQ versions', () => {
   });
 
   describe('version 3.2', () => {
-    before(async () => {
+    before(() => {
       setVersion('3.2');
     });
 
