@@ -1,9 +1,15 @@
-'use strict';
+import { EventEmitter } from 'events';
 
-const {connect, resetMock} = require('..');
-const {EventEmitter} = require('events');
+import { connect, resetMock, FakeAmqplib } from '../index.js';
 
 describe('fake amqplib', () => {
+  describe('FakeAmqplib', () => {
+    it('can be created without new', () => {
+      const fake = FakeAmqplib();
+      expect(fake.version).to.equal(3.5);
+    });
+  });
+
   describe('channels', () => {
     let connection;
     before((done) => {
@@ -147,7 +153,7 @@ describe('fake amqplib', () => {
 
       let onMessageArgs;
 
-      await channel.publish('consume', 'test', Buffer.from(JSON.stringify({data: 1})));
+      await channel.publish('consume', 'test', Buffer.from(JSON.stringify({ data: 1 })));
 
       expect(onMessageArgs, 'message arguments').to.be.ok;
       expect(onMessageArgs.length).to.equal(1);
@@ -165,13 +171,13 @@ describe('fake amqplib', () => {
     it('clears queues, exchanges, and consumers', async () => {
       const connection = await connect('amqp://localhost:15672');
       const channel = await connection.createChannel();
-      await channel.assertExchange('event', 'topic', {durable: true, autoDelete: false});
+      await channel.assertExchange('event', 'topic', { durable: true, autoDelete: false });
       await channel.assertQueue('event-q');
 
-      await channel.bindQueue('event-q', 'event', '#', {durable: true});
+      await channel.bindQueue('event-q', 'event', '#', { durable: true });
 
-      await channel.assertExchange('temp', 'topic', {durable: false});
-      await channel.assertQueue('frifras-q', {durable: false});
+      await channel.assertExchange('temp', 'topic', { durable: false });
+      await channel.assertQueue('frifras-q', { durable: false });
 
       await channel.bindQueue('frifras-q', 'temp', '#');
 
@@ -188,13 +194,13 @@ describe('fake amqplib', () => {
     it('creates new connections after reset', async () => {
       let connection = await connect('amqp://localhost:15672');
       let channel = await connection.createChannel();
-      await channel.assertExchange('event', 'topic', {durable: true, autoDelete: false});
+      await channel.assertExchange('event', 'topic', { durable: true, autoDelete: false });
       await channel.assertQueue('event-q');
 
-      await channel.bindQueue('event-q', 'event', '#', {durable: true});
+      await channel.bindQueue('event-q', 'event', '#', { durable: true });
 
-      await channel.assertExchange('temp', 'topic', {durable: false});
-      await channel.assertQueue('frifras-q', {durable: false});
+      await channel.assertExchange('temp', 'topic', { durable: false });
+      await channel.assertQueue('frifras-q', { durable: false });
 
       await channel.bindQueue('frifras-q', 'temp', '#');
 
@@ -210,7 +216,7 @@ describe('fake amqplib', () => {
       connection = await connect('amqp://localhost:5672');
       channel = await connection.createChannel();
 
-      await channel.assertExchange('event', 'topic', {durable: true, autoDelete: false});
+      await channel.assertExchange('event', 'topic', { durable: true, autoDelete: false });
       await channel.assertQueue('event-q');
 
       expect(connection._broker, 'exchangeCount').to.have.property('exchangeCount', 1);

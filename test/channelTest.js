@@ -1,6 +1,4 @@
-'use strict';
-
-const {connect, resetMock} = require('..');
+import { connect, resetMock } from '../index.js';
 
 describe('channel', () => {
   describe('#assertExchange', () => {
@@ -107,7 +105,7 @@ describe('channel', () => {
     });
 
     it('creates exclusive queue if exclusive is passed', async () => {
-      const ok = await channel.assertQueue('excl-q', {exclusive: true});
+      const ok = await channel.assertQueue('excl-q', { exclusive: true });
       expect(ok).to.be.ok;
       expect(ok).to.have.property('queue', 'excl-q');
       expect(ok).to.have.property('consumerCount');
@@ -193,12 +191,12 @@ describe('channel', () => {
     });
 
     it('returns message count', async () => {
-      const {messageCount} = await channel.deleteQueue('events-q');
+      const { messageCount } = await channel.deleteQueue('events-q');
       expect(messageCount).to.equal(2);
     });
 
     it('returns message count in callback', (done) => {
-      channel.deleteQueue('events-q', (err, {messageCount}) => {
+      channel.deleteQueue('events-q', (err, { messageCount }) => {
         if (err) return done(err);
         expect(messageCount).to.equal(2);
         done();
@@ -222,12 +220,12 @@ describe('channel', () => {
     });
 
     it('returns message count', async () => {
-      const {messageCount} = await channel.purgeQueue('events-q');
+      const { messageCount } = await channel.purgeQueue('events-q');
       expect(messageCount).to.equal(2);
     });
 
     it('returns message count in callback', (done) => {
-      channel.purgeQueue('events-q', (err, {messageCount}) => {
+      channel.purgeQueue('events-q', (err, { messageCount }) => {
         if (err) return done(err);
         expect(messageCount).to.equal(2);
         done();
@@ -320,8 +318,8 @@ describe('channel', () => {
     });
 
     it('returns ok binding doesn\'t exist', async () => {
-      const connection = await connect('amqp://localhost');
-      const channel = await connection.createChannel();
+      const conn = await connect('amqp://localhost');
+      const channel = await conn.createChannel();
       await channel.assertExchange('events');
       await channel.assertQueue('events-q');
 
@@ -463,7 +461,7 @@ describe('channel', () => {
       await channel.bindQueue('consume-q', 'consume', '#');
 
       return new Promise((resolve, reject) => {
-        const result = channel.publish('consume', 'test.1', Buffer.from('msg'), {type: 'test'}, {}, () => {
+        const result = channel.publish('consume', 'test.1', Buffer.from('msg'), { type: 'test' }, {}, () => {
           reject(new Error('Ignore callback'));
         });
         expect(result, 'return value').to.be.true;
@@ -504,7 +502,7 @@ describe('channel', () => {
     it('confirm channel calls callback with error if message was nacked by queue for some reason', async () => {
       const channel = await connection.createConfirmChannel();
       await channel.assertExchange('consume');
-      await channel.assertQueue('consume-q', {maxLength: 0});
+      await channel.assertQueue('consume-q', { maxLength: 0 });
       await channel.bindQueue('consume-q', 'consume', '#');
 
       return new Promise((resolve, reject) => {
@@ -537,7 +535,7 @@ describe('channel', () => {
         });
       });
 
-      channel.publish('consume', 'test.1', Buffer.from('MSG'), {mandatory: true});
+      channel.publish('consume', 'test.1', Buffer.from('MSG'), { mandatory: true });
 
       const msg = await onReturn;
       expect(msg).to.be.ok;
@@ -548,7 +546,7 @@ describe('channel', () => {
       expect(msg).to.have.property('properties');
     });
 
-    it('closes channel if exchange doesn\'t exist', (done) => {
+    it('closes normal channel if exchange doesn\'t exist', (done) => {
       connection.createChannel().then((channel) => {
         channel.on('error', (err) => {
           expect(err.code).to.equal(404);
@@ -561,7 +559,20 @@ describe('channel', () => {
       }).catch(done);
     });
 
-    it('publish to empty string sends message to queue with routingKey name', async () => {
+    it('closes confirm channel if exchange doesn\'t exist', (done) => {
+      connection.createConfirmChannel().then((channel) => {
+        channel.on('error', (err) => {
+          expect(err.code).to.equal(404);
+          done();
+        });
+
+        const result = channel.publish('consume', 'test.1', Buffer.from('MSG'));
+
+        expect(result).to.be.true;
+      }).catch(done);
+    });
+
+    it('normal channel publish to empty exchange sends message to queue with routingKey name', async () => {
       const channel = await connection.createChannel();
       await channel.assertQueue('empty');
       expect(channel.publish('', 'empty', Buffer.from('MSG'))).to.be.true;
@@ -573,8 +584,27 @@ describe('channel', () => {
       });
     });
 
-    it('throws TypeError if content is not a Buffer', async () => {
+    it('confirm channel publish to empty exchange sends message to queue with routingKey name', async () => {
+      const channel = await connection.createConfirmChannel();
+      await channel.assertQueue('empty');
+      expect(channel.publish('', 'empty', Buffer.from('MSG'))).to.be.true;
+
+      return new Promise((resolve) => {
+        channel.consume('empty', () => {
+          resolve();
+        });
+      });
+    });
+
+    it('normal channel throws TypeError if content is not a Buffer', async () => {
       const channel = await connection.createChannel();
+      expect(() => {
+        channel.publish('events', {});
+      }).to.throw(TypeError);
+    });
+
+    it('confirm channel throws TypeError if content is not a Buffer', async () => {
+      const channel = await connection.createConfirmChannel();
       expect(() => {
         channel.publish('events', {});
       }).to.throw(TypeError);
@@ -586,13 +616,6 @@ describe('channel', () => {
     beforeEach(async () => {
       resetMock();
       connection = await connect('amqp://localhost');
-    });
-
-    it('throws TypeError if content is not a Buffer', async () => {
-      const channel = await connection.createChannel();
-      expect(() => {
-        channel.sendToQueue('events-q', {});
-      }).to.throw(TypeError);
     });
 
     it('ignores callback if not confirm channel', async () => {
@@ -607,7 +630,7 @@ describe('channel', () => {
         });
         expect(result, 'return value').to.be.true;
 
-        channel.consume('consume-q', resolve, {noAck: true});
+        channel.consume('consume-q', resolve, { noAck: true });
       });
     });
 
@@ -626,7 +649,7 @@ describe('channel', () => {
 
     it('confirm channel calls callback with error if message was nacked by queue for some reason', async () => {
       const channel = await connection.createConfirmChannel();
-      await channel.assertQueue('consume-q', {maxLength: 0});
+      await channel.assertQueue('consume-q', { maxLength: 0 });
 
       return new Promise((resolve, reject) => {
         channel.sendToQueue('consume-q', Buffer.from('MSG'), {}, (err, ok) => {
@@ -646,7 +669,7 @@ describe('channel', () => {
       });
     });
 
-    it('closes channel if queue doesn\'t exist', (done) => {
+    it('closes normal channel if queue doesn\'t exist', (done) => {
       connection.createChannel().then((channel) => {
         channel.on('error', (err) => {
           expect(err.code).to.equal(404);
@@ -656,6 +679,32 @@ describe('channel', () => {
         const result = channel.sendToQueue('consume-q', Buffer.from('MSG'));
         expect(result).to.be.true;
       }).catch(done);
+    });
+
+    it('closes confirm channel if queue doesn\'t exist', (done) => {
+      connection.createConfirmChannel().then((channel) => {
+        channel.on('error', (err) => {
+          expect(err.code).to.equal(404);
+          done();
+        });
+
+        const result = channel.sendToQueue('consume-q', Buffer.from('MSG'));
+        expect(result).to.be.true;
+      }).catch(done);
+    });
+
+    it('normal channel throws TypeError if content is not a Buffer', async () => {
+      const channel = await connection.createChannel();
+      expect(() => {
+        channel.sendToQueue('events-q', {});
+      }).to.throw(TypeError);
+    });
+
+    it('confirm channel throws TypeError if content is not a Buffer', async () => {
+      const channel = await connection.createConfirmChannel();
+      expect(() => {
+        channel.sendToQueue('events-q', {});
+      }).to.throw(TypeError);
     });
   });
 
@@ -706,7 +755,7 @@ describe('channel', () => {
     });
 
     it('promise returns false if no more messages', async () => {
-      await channel.get('event-q', {noAck: true});
+      await channel.get('event-q', { noAck: true });
       const msg = await channel.get('event-q');
       expect(msg).to.be.false;
     });
@@ -767,7 +816,7 @@ describe('channel', () => {
         channel.consume('event-q', (msg) => {
           messages.push(msg);
           if (messages.length === 3) resolve(messages);
-        }, {noAck: true});
+        }, { noAck: true });
       });
 
       channel.publish('event', 'test.prod', Buffer.from('PROD'));
@@ -815,7 +864,7 @@ describe('channel', () => {
 
           channel.ack(msg);
           if (messages.length === 2) resolve(messages);
-        }, {exclusive: true});
+        }, { exclusive: true });
       });
 
       channel.publish('event', 'live.message', Buffer.from('LIVE'));
@@ -858,7 +907,7 @@ describe('channel', () => {
         channel.consume('event-q', (msg) => {
           channel.ack(msg);
           resolve(msg);
-        }, {exclusive: true});
+        }, { exclusive: true });
       });
 
       const secondConnection = await connect(connection._url);
@@ -867,7 +916,7 @@ describe('channel', () => {
       try {
         await secondChannel.consume('event-q', (msg) => {
           channel.ack(msg);
-        }, {exclusive: true});
+        }, { exclusive: true });
       } catch (err) {
         var consumeError = err;
       }
@@ -891,7 +940,7 @@ describe('channel', () => {
     });
 
     it('kills channel and connection if trying to consume exclusive queue', async () => {
-      await channel.assertQueue('exclusive-q', {exclusive: true});
+      await channel.assertQueue('exclusive-q', { exclusive: true });
       await channel.bindQueue('exclusive-q', 'event', 'live.#');
 
       const waitMessage = new Promise((resolve) => {
@@ -975,7 +1024,7 @@ describe('channel', () => {
       channel.prefetch(3);
 
       await Promise.all(Array(9).fill().map((_, idx) => {
-        return channel.publish('event', `test.${idx}`, Buffer.from('' + idx));
+        return channel.publish('event', `test.${idx}`, Buffer.from(`${idx}`));
       }));
 
       const messages = [];
@@ -1001,7 +1050,7 @@ describe('channel', () => {
 
     it('no prefetch consumes "all" messages', async () => {
       await Promise.all(Array(9).fill().map((_, idx) => {
-        return channel.publish('event', `test.${idx}`, Buffer.from('' + idx));
+        return channel.publish('event', `test.${idx}`, Buffer.from(`${idx}`));
       }));
 
       const messages = [];
@@ -1217,7 +1266,7 @@ describe('channel', () => {
       await channel1.sendToQueue('events-q', Buffer.from('MSG'));
 
       channel1.prefetch(1);
-      await channel1.consume('events-q', () => {}, {consumerTag: 'test-reject'});
+      await channel1.consume('events-q', () => {}, { consumerTag: 'test-reject' });
 
       const channel2 = await connection.createChannel();
       const msg = await channel2.get('events-q');

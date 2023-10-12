@@ -6,12 +6,11 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
+    timeout-minutes: 20
     strategy:
       matrix:
-        node-version: [12.x, 14.x, 16.x, 18.x]
+        node-version: [ 16, 18, latest ]
 
     steps:
       - uses: actions/checkout@v2

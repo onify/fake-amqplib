@@ -1,6 +1,4 @@
-'use strict';
-
-const {connect, resetMock, setVersion} = require('..');
+import { connect, resetMock, setVersion } from '../index.js';
 
 describe('different behaviour between RabbitMQ versions', () => {
   after(() => {
@@ -19,7 +17,9 @@ describe('different behaviour between RabbitMQ versions', () => {
       expect(conn3._version).to.equal(3.2);
 
       const channel2 = await conn2.createChannel();
-      expect(channel2.nack).to.be.undefined;
+      expect(channel2.nack).to.be.ok;
+      expect(() => channel2.nack()).to.throw(Error);
+
       expect(channel2._version).to.equal(2.2);
 
       const channel3 = await conn3.createChannel();
@@ -42,11 +42,11 @@ describe('different behaviour between RabbitMQ versions', () => {
   });
 
   describe('version 2.3', () => {
-    it('before 2.3 there was no nack function', async () => {
+    it('before 2.3 there was no nack function, and it throws', async () => {
       setVersion('2.2');
       const conn = await connect('amqp://localhost');
       const channel = await conn.createChannel();
-      expect(channel.nack).to.be.undefined;
+      expect(() => channel.nack()).to.throw(Error);
     });
   });
 

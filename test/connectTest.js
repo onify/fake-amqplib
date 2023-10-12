@@ -1,12 +1,11 @@
-'use strict';
+import { EventEmitter } from 'events';
 
-const {connect, connectSync, connections, resetMock} = require('..');
-const {EventEmitter} = require('events');
+import { connect, connectSync, connections, resetMock, setVersion } from '../index.js';
 
 describe('fake amqplib connections', () => {
   describe('#connect', () => {
     beforeEach(resetMock);
- 
+
     it('exposes the expected api on connection', (done) => {
       connect('amqp://localhost', null, (err, connection) => {
         if (err) return done(err);
@@ -27,12 +26,12 @@ describe('fake amqplib connections', () => {
     });
 
     it('username only defaults defaults hostname etc', async () => {
-      const conn = await connect({username: 'guest'});
+      const conn = await connect({ username: 'guest' });
       expect(conn._url.toString()).to.equal('amqp://guest@localhost:5672/');
     });
 
     it('tuning parameters only defaults hostname etc', async () => {
-      const conn = await connect({locale: 'sv_SE'});
+      const conn = await connect({ locale: 'sv_SE' });
       expect(conn._url.toString()).to.equal('amqp://localhost:5672/?locale=sv_SE');
     });
 
@@ -65,10 +64,10 @@ describe('fake amqplib connections', () => {
         vhost: '/myhost',
       };
 
-      const conn1 = await connect({...connObj});
+      const conn1 = await connect({ ...connObj });
       expect(conn1._url.toString()).to.equal('amqp://guest:guest@localhost:15672/myhost?locale=en_US&frameMax=0&heartbeat=0');
 
-      const conn2 = await connect({...connObj});
+      const conn2 = await connect({ ...connObj });
 
       expect(conn1._broker === conn2._broker).to.be.true;
       expect(conn1 === conn2, 'same connection').to.be.false;
@@ -80,7 +79,7 @@ describe('fake amqplib connections', () => {
 
       expect(conn1._broker === conn2._broker).to.be.false;
     });
-  
+
     it('connection with the same amqpUrl but different querystrings shares broker', async () => {
       const conn1 = await connect('amqp://testrabbit:5672?heartbeat=10');
       const conn2 = await connect('amqp://testrabbit:5672');
@@ -117,7 +116,7 @@ describe('fake amqplib connections', () => {
       const conn1 = await connect('amqp://localhost:5672');
       const conn2 = await connect('amqp://localhost:15672');
       await connect('amqp://localhost:15672/vhost');
-      expect(connections).to.have.length.above(2).and.include.members([conn1, conn2]);
+      expect(connections).to.have.length.above(2).and.include.members([ conn1, conn2 ]);
     });
 
     it('connection.close() removes connection from list', async () => {
@@ -173,17 +172,17 @@ describe('fake amqplib connections', () => {
       await channel2.assertExchange('event', 'topic');
       await channel2.assertQueue('event-q');
       await channel2.bindQueue('event-q', 'event', '#');
-      let msgs = [];
+      const msgs = [];
       await channel2.consume('event-q', (msg) => {
         msgs.push(msg);
-      }, {noAck: true});
+      }, { noAck: true });
 
       const channel1 = await conn1.createChannel();
       await channel1.assertQueue('event1-q');
       await channel1.bindQueue('event1-q', 'event', '#');
       await channel1.consume('event1-q', (msg) => {
         msgs.push(msg);
-      }, {noAck: true});
+      }, { noAck: true });
 
       await conn1.close();
 
@@ -192,9 +191,27 @@ describe('fake amqplib connections', () => {
     });
   });
 
+  describe('connection properties', () => {
+    beforeEach(resetMock);
+
+    it('exposes connection serverProperties', async () => {
+      setVersion('3.8');
+      const connection = await connect('amqp://testrabbit:5672/host1');
+      expect(connection).to.have.property('connection').with.property('serverProperties');
+      expect(connection.connection.serverProperties).to.deep.equal({
+        host: 'testrabbit:5672',
+        product: 'RabbitMQ',
+        version: '3.8.0',
+        platform: 'OS',
+        copyright: 'MIT',
+        information: 'fake',
+      });
+    });
+  });
+
   describe('helper method #connectSync', () => {
     beforeEach(resetMock);
- 
+
     it('adds connection synchronously', async () => {
       await connect('amqp://testrabbit:5672');
       const connection = connectSync('amqp://testrabbit:15672');
@@ -204,7 +221,7 @@ describe('fake amqplib connections', () => {
 
       expect(connections).to.have.length(2);
     });
- 
+
     it('returns shared broker from existing connection', async () => {
       const conn1 = await connect('amqp://testrabbit:5672');
       const conn2 = connectSync('amqp://testrabbit:5672');

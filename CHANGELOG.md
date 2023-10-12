@@ -1,6 +1,13 @@
 Changelog
 =========
 
+# 2.0.0
+
+- drop node 12 support
+- convert to esm with exports for node
+- smqp@8
+- lint some
+
 # 1.0.0
 
 - smqp@6.1
