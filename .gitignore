@@ -37,3 +37,5 @@ config/_revision
 *.log
 
 package-lock.json
+main.cjs
+tmp/

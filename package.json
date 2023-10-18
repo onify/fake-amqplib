@@ -1,19 +1,30 @@
 {
   "name": "@onify/fake-amqplib",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Fake amqplib",
-  "main": "index.js",
+  "type": "module",
+  "exports": {
+    "require": "./main.cjs",
+    "import": "./index.js"
+  },
+  "types": "index.d.ts",
+  "module": "./index.js",
+  "main": "./main.cjs",
   "scripts": {
     "test": "mocha",
-    "posttest": "eslint . --cache",
-    "cov:html": "nyc mocha && nyc report --reporter=html"
+    "posttest": "npm run lint && npm run dist",
+    "lint": "eslint . --cache",
+    "dist": "rollup -c",
+    "prepack": "npm run dist",
+    "cov:html": "c8 -r html -r text mocha",
+    "test:lcov": "c8 -r lcov mocha && npm run lint"
   },
   "author": {
     "name": "Onify",
     "url": "https://github.com/onify"
   },
   "engines": {
-    "node": ">=10"
+    "node": ">=14"
   },
   "repository": {
     "type": "git",
@@ -21,7 +32,17 @@
   },
   "license": "MIT",
   "dependencies": {
-    "smqp": "^6.1.0"
+    "smqp": "^8.2.0"
+  },
+  "devDependencies": {
+    "@bonniernews/eslint-config": "^1.0.1",
+    "@rollup/plugin-commonjs": "^25.0.5",
+    "@types/amqplib": "^0.10.2",
+    "c8": "^8.0.1",
+    "chai": "^4.3.10",
+    "eslint": "^8.51.0",
+    "mocha": "^10.2.0",
+    "rollup": "^4.0.2"
   },
   "keywords": [
     "fake",
@@ -30,13 +51,9 @@
     "amqplib",
     "rabbitmq"
   ],
-  "devDependencies": {
-    "chai": "^4.3.7",
-    "eslint": "^8.27.0",
-    "mocha": "^10.1.0",
-    "nyc": "^15.1.0"
-  },
   "files": [
-    "index.js"
+    "index.js",
+    "index.d.ts",
+    "main.cjs"
   ]
 }

@@ -1,23 +1,39 @@
-name: Built latest
+name: Build
 
 on:
+  pull_request:
   push:
-    branches: [ default ]
+    branches: default
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
+    timeout-minutes: 20
     strategy:
       matrix:
-        node-version: [12.x, 14.x, 16.x, 18.x]
-
+        node-version: [ 16, 18, latest ]
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v3
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node-version }}
       - run: npm i
-      - run: npm test
+      - run: npm run test:lcov
+      - name: Coveralls
+        uses: coverallsapp/github-action@master
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          flag-name: run-${{ matrix.node-version }}
+          parallel: true
+
+  finish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Coveralls Finished
+        uses: coverallsapp/github-action@master
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parallel-finished: true
