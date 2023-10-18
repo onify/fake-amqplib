@@ -1,6 +1,6 @@
 # Onify fake-amqplib
 
-[![Built latest](https://github.com/onify/fake-amqplib/actions/workflows/build-latest.yaml/badge.svg)](https://github.com/onify/fake-amqplib/actions/workflows/build-latest.yaml)
+[![Built latest](https://github.com/onify/fake-amqplib/actions/workflows/build-latest.yaml/badge.svg)](https://github.com/onify/fake-amqplib/actions/workflows/build-latest.yaml)[![Coverage Status](https://coveralls.io/repos/github/onify/fake-amqplib/badge.svg?branch=default)](https://coveralls.io/github/onify/fake-amqplib?branch=default)
 
 Mocked version of https://www.npmjs.com/package/amqplib.
 
