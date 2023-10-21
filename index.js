@@ -148,8 +148,7 @@ export class FakeAmqplibChannel {
       const msg = q.get(...getargs) || false;
       if (!msg) return msg;
 
-      const consumeMessage = createMessage(msg, args[0]?.noAck);
-      return consumeMessage;
+      return createMessage(msg, args[0]?.noAck);
     }
   }
   deleteExchange(exchange, ...args) {
@@ -285,15 +284,7 @@ export class FakeAmqplibChannel {
   }
   close(callback) {
     if (this[kClosed]) return;
-    const channelName = this._channelName;
-    const broker = this._broker;
-
-    this._channelQueue.delete();
-
-    broker.off('return', this._emitReturn);
-    const channelConsumers = broker.getConsumers().filter((f) => f.options.channelName === channelName);
-    channelConsumers.forEach((c) => broker.cancel(c.consumerTag));
-    this[kClosed] = true;
+    this._teardown();
     this[kEmitter].emit('close');
     return resolveOrCallback(callback);
   }
@@ -447,7 +438,7 @@ export class FakeAmqplibChannel {
         return resolve(result);
       } catch (err) {
         if (err._killConnection) this.connection.close();
-        else if (err._killChannel) this[kClosed] = true;
+        else if (err._killChannel) this._teardown();
         if (err._emit) this._emitter.emit('error', err);
         if (!poppedCb) return reject(err);
         poppedCb(err);
@@ -465,6 +456,21 @@ export class FakeAmqplibChannel {
     const consumeMessage = new Message(smqpMessage, deliveryTag);
     if (!noAck) this._channelQueue.queueMessage(consumeMessage.fields, consumeMessage);
     return consumeMessage;
+  }
+  _teardown() {
+    this[kClosed] = true;
+    const channelName = this._channelName;
+    const broker = this._broker;
+    const channelConsumers = broker.getConsumers().filter((f) => f.options.channelName === channelName);
+    channelConsumers.forEach((c) => broker.cancel(c.consumerTag));
+
+    let msg;
+    while ((msg = this._channelQueue.get())) {
+      msg.content[kSmqp].reject(true);
+      msg.reject(false);
+    }
+
+    broker.off('return', this._emitReturn);
   }
 }
 

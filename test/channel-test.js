@@ -877,7 +877,7 @@ describe('channel', () => {
       expect(msgs[1], 'message #2').to.have.property('fields').with.property('routingKey', 'live.message.test');
     });
 
-    it('kills channel if trying to consume missing queue', async () => {
+    it('kills channel if trying to consume unknown queue', async () => {
       try {
         await channel.consume('non-event-q', (msg) => {
           channel.ack(msg);
@@ -1670,6 +1670,78 @@ describe('channel', () => {
       expect(error.message).to.equal('Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1');
 
       expect(channel2._closed).to.be.true;
+    });
+  });
+
+  describe('outstanding messages', () => {
+    let connection;
+    beforeEach(async () => {
+      connection = await connect('amqp://localhost');
+    });
+    afterEach(resetMock);
+
+    it('puts outstanding consumed messages back on queue if channel is closed', async () => {
+      const channel1 = await connection.createChannel();
+
+      await channel1.assertQueue('events-q', { autoDelete: false });
+
+      await channel1.sendToQueue('events-q', Buffer.from('MSG1'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG2'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG3'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG4'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG5'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG6'));
+
+      channel1.prefetch(4);
+      await channel1.consume('events-q', () => {}, { consumerTag: 'test-nack-1' });
+      await channel1.close();
+
+      const channel2 = await connection.createChannel();
+      const msg1 = await channel2.get('events-q');
+
+      expect(msg1.fields).to.have.property('redelivered', true);
+      expect(msg1.content.toString(), 'CONTENT').to.equal('MSG1');
+      await channel2.close();
+
+      const channel3 = await connection.createChannel();
+      const msg2 = await channel3.get('events-q');
+
+      expect(msg2.fields).to.have.property('redelivered', true);
+      expect(msg2.content.toString(), 'CONTENT').to.equal('MSG1');
+    });
+
+    it('puts outstanding consumed messages back on queue if channel errors', async () => {
+      const channel1 = await connection.createChannel();
+
+      await channel1.assertQueue('events-q', { autoDelete: false });
+
+      await channel1.sendToQueue('events-q', Buffer.from('MSG1'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG2'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG3'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG4'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG5'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG6'));
+
+      channel1.prefetch(4);
+
+      const channelError = new Promise((resolve) => {
+        channel1.once('error', resolve);
+      });
+
+      await channel1.consume('events-q', (msg) => {
+        if (msg.fields.deliveryTag === 3) {
+          channel1.ack(msg);
+          channel1.ack(msg);
+        }
+      }, { consumerTag: 'test-nack-1' });
+
+      await channelError;
+
+      const channel2 = await connection.createChannel();
+      const msg1 = await channel2.get('events-q');
+
+      expect(msg1.fields).to.have.property('redelivered', true);
+      expect(msg1.content.toString(), 'CONTENT').to.equal('MSG1');
     });
   });
 });
