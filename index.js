@@ -5,7 +5,22 @@ import { format as urlFormat } from 'url';
 const kSmqp = Symbol.for('smqp');
 const kClosed = Symbol.for('closed');
 const kEmitter = Symbol.for('event emitter');
+const kDeliveryTag = Symbol.for('channel delivery tag');
 const kPrefetch = Symbol.for('prefetch');
+
+class AmqplibBroker extends Broker {
+  constructor(...args) {
+    super(...args);
+    this[kDeliveryTag] = 0;
+  }
+  _getNextDeliveryTag() {
+    return ++this[kDeliveryTag];
+  }
+  _getMessageByDeliveryTag(queue, deliveryTag) {
+    const q = this.getQueue(queue);
+    return q.messages.find((m) => m.fields.deliveryTag === deliveryTag);
+  }
+}
 
 class FakeAmqpError extends Error {
   constructor(message, code, killChannel, killConnection) {
@@ -22,6 +37,22 @@ class FakeAmqpNotFoundError extends FakeAmqpError {
   }
 }
 
+class FakeAmqpUnknownDeliveryTag extends FakeAmqpError {
+  constructor(deliveryTag) {
+    super(`Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag ${deliveryTag}`, 406, true, false);
+  }
+  get _emit() {
+    return true;
+  }
+}
+
+function Message(smqpMessage, deliveryTag) {
+  this[kSmqp] = smqpMessage;
+  this.fields = { ...smqpMessage.fields, deliveryTag };
+  this.content = Buffer.from(smqpMessage.content);
+  this.properties = { ...smqpMessage.properties };
+}
+
 export class FakeAmqplibChannel {
   constructor(broker, connection) {
     this.connection = connection;
@@ -29,13 +60,17 @@ export class FakeAmqplibChannel {
     this[kPrefetch] = 10000;
     this[kClosed] = false;
     this[kEmitter] = new EventEmitter();
-    this._channelName = `channel-${generateId()}`;
+    const channelName = this._channelName = `channel-${generateId()}`;
     this._version = connection._version;
     this._broker = broker;
+
+    this._channelQueue = broker.assertQueue(`#${channelName}`);
 
     this._emitReturn = this._emitReturn.bind(this);
 
     broker.on('return', this._emitReturn);
+
+    this._createChannelMessage = this._createChannelMessage.bind(this);
   }
   get _emitter() {
     return this[kEmitter];
@@ -104,14 +139,17 @@ export class FakeAmqplibChannel {
   }
   get(queue, ...args) {
     const connPath = this.connection._url.pathname;
+    const createMessage = this._createChannelMessage;
     return this._callBroker(getMessage, ...args);
 
     function getMessage(...getargs) {
       const q = this.getQueue(queue);
-      if (!q) throw new FakeAmqpNotFoundError('queue', queue, connPath._url.pathname);
+      if (!q) throw new FakeAmqpNotFoundError('queue', queue, connPath);
       const msg = q.get(...getargs) || false;
       if (!msg) return msg;
-      return new Message(msg);
+
+      const consumeMessage = createMessage(msg, args[0]?.noAck);
+      return consumeMessage;
     }
   }
   deleteExchange(exchange, ...args) {
@@ -214,12 +252,13 @@ export class FakeAmqplibChannel {
   }
   consume(queue, onMessage, options = {}, callback) {
     const { _id: connId, _url: connUrl } = this.connection;
+    const createMessage = this._createChannelMessage;
     const channelName = this._channelName;
     const prefetch = this[kPrefetch];
 
-    return this._callBroker(check, callback);
+    return this._callBroker(consume, callback);
 
-    function check() {
+    function consume() {
       const q = queue && this.getQueue(queue);
       if (!q) {
         throw new FakeAmqpNotFoundError('queue', queue, connUrl.pathname);
@@ -238,7 +277,7 @@ export class FakeAmqplibChannel {
     }
 
     function handler(_, msg) {
-      onMessage(new Message(msg));
+      onMessage(createMessage(msg));
     }
   }
   cancel(consumerTag, ...args) {
@@ -249,6 +288,8 @@ export class FakeAmqplibChannel {
     const channelName = this._channelName;
     const broker = this._broker;
 
+    this._channelQueue.delete();
+
     broker.off('return', this._emitReturn);
     const channelConsumers = broker.getConsumers().filter((f) => f.options.channelName === channelName);
     channelConsumers.forEach((c) => broker.cancel(c.consumerTag));
@@ -256,29 +297,131 @@ export class FakeAmqplibChannel {
     this[kEmitter].emit('close');
     return resolveOrCallback(callback);
   }
-  ack(message, ...args) {
-    this._broker.ack(message[kSmqp], ...args);
+  ack(message, allUpTo) {
+    const deliveryTag = message.fields.deliveryTag;
+    const channelMessage = this._broker._getMessageByDeliveryTag(this._channelQueue.name, deliveryTag);
+    const channelQ = this._channelQueue;
+
+    if (!allUpTo) this._callBroker(ackMessage);
+    else this._callBroker(ackAllUpToMessage);
+
+    function ackMessage() {
+      const msg = message[kSmqp];
+      if (!channelMessage || !msg.pending) {
+        throw new FakeAmqpUnknownDeliveryTag(message.fields.deliveryTag);
+      }
+
+      this.ack(msg, false);
+    }
+
+    function ackAllUpToMessage() {
+      const msg = message[kSmqp];
+      if (!channelMessage || !msg.pending) {
+        throw new FakeAmqpUnknownDeliveryTag(message.fields.deliveryTag);
+      }
+
+      const brokerMessages = [];
+      const consumer = channelQ.consume((_, cmsg) => {
+        const msgDeliveryTag = cmsg.fields.deliveryTag;
+        if (msgDeliveryTag >= deliveryTag) {
+          return channelQ.cancel(cmsg.fields.consumerTag);
+        }
+        brokerMessages.push(cmsg.content[kSmqp]);
+        cmsg.ack();
+      }, { prefetch: 10000 });
+
+      consumer.cancel();
+
+      for (const brokerMessage of brokerMessages) {
+        brokerMessage.ack(false);
+      }
+
+      channelMessage.ack(false);
+      this.ack(msg, false);
+    }
   }
   ackAll() {
-    const broker = this._broker;
-    const channelName = this._channelName;
+    const channelQ = this._channelQueue;
+    let msg;
+    const brokerMessages = [];
+    while ((msg = channelQ.get())) {
+      brokerMessages.push(msg.content[kSmqp]);
+      msg.ack();
+    }
 
-    const consumers = broker.getConsumers().filter(({ options }) => options.channelName === channelName);
-    consumers.forEach((c) => broker.getConsumer(c.consumerTag).ackAll());
+    for (const brokerMessage of brokerMessages) {
+      brokerMessage.ack();
+    }
   }
-  nack(message, ...args) {
-    if (this.connection._version >= 2.3) throw new Error(`Nack is not implemented in versions before 2.3 (${this.connection._version})`);
-    return this._broker.nack(message[kSmqp], ...args);
-  }
-  reject(message, ...args) {
-    this._broker.reject(message[kSmqp], ...args);
-  }
-  nackAll(requeue = false) {
-    const broker = this._broker;
-    const channelName = this._channelName;
+  reject(message, requeue = false) {
+    this._callBroker(rejectMessage);
 
-    const consumers = broker.getConsumers().filter(({ options }) => options.channelName === channelName);
-    consumers.forEach((c) => broker.getConsumer(c.consumerTag).nackAll(requeue));
+    function rejectMessage() {
+      const msg = message[kSmqp];
+      if (!msg.pending) {
+        throw new FakeAmqpUnknownDeliveryTag(message.fields.deliveryTag);
+      }
+
+      this.reject(msg, requeue);
+    }
+  }
+  nack(message, allUpTo = false, requeue = false) {
+    if (this.connection._version < 2.3) throw new Error(`Nack is not implemented in versions before 2.3 (${this.connection._version})`);
+
+    const deliveryTag = message.fields.deliveryTag;
+    const channelMessage = this._broker._getMessageByDeliveryTag(this._channelQueue.name, deliveryTag);
+    const channelQ = this._channelQueue;
+
+    if (!allUpTo) this._callBroker(nackMessage);
+    else this._callBroker(nackAllUpToMessage);
+
+    function nackMessage() {
+      const msg = message[kSmqp];
+      if (!channelMessage || !msg.pending) {
+        throw new FakeAmqpUnknownDeliveryTag(message.fields.deliveryTag);
+      }
+
+      this.nack(msg, false, requeue);
+    }
+
+    function nackAllUpToMessage() {
+      const msg = message[kSmqp];
+      if (!channelMessage || !msg.pending) {
+        throw new FakeAmqpUnknownDeliveryTag(message.fields.deliveryTag);
+      }
+
+      const brokerMessages = [];
+      const consumer = channelQ.consume((_, cmsg) => {
+        const msgDeliveryTag = cmsg.fields.deliveryTag;
+        if (msgDeliveryTag >= deliveryTag) {
+          return channelQ.cancel(cmsg.fields.consumerTag);
+        }
+        brokerMessages.push(cmsg.content[kSmqp]);
+        cmsg.nack();
+      }, { prefetch: 10000 });
+
+      consumer.cancel();
+
+      for (const brokerMessage of brokerMessages) {
+        brokerMessage.nack(false, requeue);
+      }
+
+      channelMessage.nack(false, false);
+      this.nack(msg, false, requeue);
+    }
+  }
+  nackAll(requeue = true) {
+    const channelQ = this._channelQueue;
+    let msg;
+    const brokerMessages = [];
+    while ((msg = channelQ.get())) {
+      brokerMessages.push(msg.content[kSmqp]);
+      msg.reject(false);
+    }
+
+    for (const brokerMessage of brokerMessages) {
+      brokerMessage.reject(requeue);
+    }
   }
   prefetch(val) {
     this[kPrefetch] = val;
@@ -305,6 +448,7 @@ export class FakeAmqplibChannel {
       } catch (err) {
         if (err._killConnection) this.connection.close();
         else if (err._killChannel) this[kClosed] = true;
+        if (err._emit) this._emitter.emit('error', err);
         if (!poppedCb) return reject(err);
         poppedCb(err);
         return resolve();
@@ -315,6 +459,12 @@ export class FakeAmqplibChannel {
     process.nextTick(() => {
       this[kEmitter].emit('return', { fields, content, properties });
     });
+  }
+  _createChannelMessage(smqpMessage, noAck) {
+    const deliveryTag = this._broker._getNextDeliveryTag();
+    const consumeMessage = new Message(smqpMessage, deliveryTag);
+    if (!noAck) this._channelQueue.queueMessage(consumeMessage.fields, consumeMessage);
+    return consumeMessage;
   }
 }
 
@@ -434,7 +584,7 @@ FakeAmqplib.prototype.connect = function fakeConnect(amqpUrl, ...args) {
 
 FakeAmqplib.prototype.connectSync = function fakeConnectSync(amqpUrl, ...args) {
   const { _broker } = this.connections.find((conn) => compareConnectionString(conn._url, amqpUrl)) || {};
-  const broker = _broker || new Broker(this);
+  const broker = _broker || new AmqplibBroker(this);
   const connection = new FakeAmqplibConnection(broker, this.version, amqpUrl, ...args);
 
   const connections = this.connections;
@@ -475,13 +625,6 @@ function compareConnectionString(url1, url2) {
   const parsedUrl2 = normalizeAmqpUrl(url2);
 
   return parsedUrl1.host === parsedUrl2.host && parsedUrl1.pathname === parsedUrl2.pathname;
-}
-
-function Message(smqpMessage) {
-  this[kSmqp] = smqpMessage;
-  this.content = smqpMessage.content;
-  this.fields = smqpMessage.fields;
-  this.properties = smqpMessage.properties;
 }
 
 function normalizeAmqpUrl(url) {

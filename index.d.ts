@@ -7,8 +7,9 @@ import { Broker } from 'smqp';
 
 export interface FakeAmqplibChannel extends Channel {
   _channelName: string;
-  _version: number;
+  _deliveryTag: number;
   _broker: Broker;
+  _version: number;
   new(broker: Broker, connection: FakeAmqplibConnection): FakeAmqplibChannel;
   get _closed(): boolean;
   get _emitter(): EventEmitter;

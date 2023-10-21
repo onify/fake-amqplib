@@ -1,4 +1,4 @@
-import { connect, resetMock, setVersion } from '../index.js';
+import { connect, resetMock, setVersion, FakeAmqplib } from '../index.js';
 
 describe('different behaviour between RabbitMQ versions', () => {
   after(() => {
@@ -42,11 +42,11 @@ describe('different behaviour between RabbitMQ versions', () => {
   });
 
   describe('version 2.3', () => {
-    it('before 2.3 there was no nack function, and it throws', async () => {
+    it('before 2.3 there was no nack function, and it throws in this fake one', async () => {
       setVersion('2.2');
       const conn = await connect('amqp://localhost');
       const channel = await conn.createChannel();
-      expect(() => channel.nack()).to.throw(Error);
+      expect(() => channel.nack()).to.throw(Error, /not implemented/d);
     });
   });
 
@@ -234,4 +234,16 @@ describe('different behaviour between RabbitMQ versions', () => {
       });
     });
   });
+
+  // describe('#prefetch', () => {
+  //   let connection, channel;
+  //   it('setting prefetch with global flag before version 3.3 kills connection', () => {
+  //     const FakeAmqplib = new FakeAmqplib()
+
+  //     connection = await connect('amqp://localhost');
+  //     channel = await connection.createChannel();
+  //     await channel.assertExchange('events');
+  //     await channel.assertQueue('events-q');
+  //   });
+  // });
 });

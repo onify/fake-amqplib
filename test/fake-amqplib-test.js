@@ -220,7 +220,7 @@ describe('fake amqplib', () => {
       await channel.assertQueue('event-q');
 
       expect(connection._broker, 'exchangeCount').to.have.property('exchangeCount', 1);
-      expect(connection._broker, 'queueCount').to.have.property('queueCount', 1);
+      expect(connection._broker, 'queueCount').to.have.property('queueCount', 2);
       expect(connection._broker, 'consumerCount').to.have.property('consumerCount', 0);
     });
   });

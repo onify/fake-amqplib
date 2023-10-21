@@ -752,6 +752,7 @@ describe('channel', () => {
       const msg = await channel.get('event-q');
       expect(msg).to.be.ok;
       expect(msg).to.to.have.property('content');
+      expect(msg.fields).to.to.have.property('deliveryTag');
     });
 
     it('promise returns false if no more messages', async () => {
@@ -768,6 +769,7 @@ describe('channel', () => {
       }
 
       expect(error).to.be.an('error');
+      expect(error.code).to.equal(404);
     });
   });
 
@@ -1115,6 +1117,99 @@ describe('channel', () => {
     });
   });
 
+  describe('#ack', () => {
+    let connection;
+    beforeEach(async () => {
+      connection = await connect('amqp://localhost');
+    });
+    afterEach(resetMock);
+
+    it('acks message', async () => {
+      const channel = await connection.createChannel();
+      await channel.assertQueue('event-q');
+      await channel.sendToQueue('event-q', Buffer.from('MSG'));
+
+      const msg = await channel.get('event-q');
+      channel.ack(msg);
+
+      expect(await channel.get('event-q')).to.be.false;
+    });
+
+    it('truthy allUpTo acks all outstanding messages prior to and including the given message', async () => {
+      const channel1 = await connection.createChannel();
+
+      await channel1.assertQueue('events-q');
+
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+
+      channel1.prefetch(1);
+
+      await channel1.consume('events-q', () => {}, { consumerTag: 'test-nack-1' });
+
+      const channel2 = await connection.createChannel();
+
+      channel2.prefetch(4);
+
+      await channel2.consume('events-q', (msg) => {
+        if (msg.fields.deliveryTag === 4) {
+          channel2.ack(msg, true);
+        }
+      }, { consumerTag: 'test-nack-2' });
+
+      const queue = await channel1.assertQueue('events-q');
+      expect(queue).to.have.property('messageCount', 3);
+    });
+
+    it('closes channel if attempting to double ack message', async () => {
+      const channel = await connection.createChannel();
+      await channel.assertQueue('event-q');
+
+      await channel.sendToQueue('event-q', Buffer.from('MSG'));
+
+      const msg = await channel.get('event-q');
+      channel.ack(msg);
+
+      const doubleAckPromise = new Promise((resolve) => {
+        channel.once('error', resolve);
+      });
+
+      channel.ack(msg);
+
+      const error = await doubleAckPromise;
+      expect(error.code).to.equal(406);
+      expect(error.message).to.equal('Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1');
+
+      expect(channel._closed).to.be.true;
+    });
+
+    it('closes channel if attempting to ack when consuming with noAck', async () => {
+      const channel = await connection.createChannel();
+      await channel.assertQueue('event-q');
+
+      await channel.consume('event-q', (msg) => {
+        channel.ack(msg);
+        channel.ack(msg);
+      }, { noAck: true });
+
+      const doubleAckPromise = new Promise((resolve) => {
+        channel.once('error', resolve);
+      });
+
+      await channel.sendToQueue('event-q', Buffer.from('MSG'));
+
+      const error = await doubleAckPromise;
+      expect(error.code).to.equal(406);
+      expect(error.message).to.equal('Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1');
+
+      expect(channel._closed).to.be.true;
+    });
+  });
+
   describe('#ackAll', () => {
     let connection;
     before(async () => {
@@ -1170,7 +1265,32 @@ describe('channel', () => {
     });
     afterEach(resetMock);
 
-    it('nacks messages on channel', async () => {
+    it('nacks messages on channel if requeue is false', async () => {
+      const channel1 = await connection.createChannel();
+
+      await channel1.assertQueue('events-q');
+
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+
+      channel1.prefetch(1);
+      await channel1.consume('events-q', () => {});
+
+      const channel2 = await connection.createChannel();
+      channel2.prefetch(2);
+      await channel2.consume('events-q', () => {});
+
+      channel2.nackAll(false);
+
+      const queue = await channel1.assertQueue('events-q');
+      expect(queue).to.have.property('messageCount', 4);
+    });
+
+    it('omitted requeue requeues messages', async () => {
       const channel1 = await connection.createChannel();
 
       await channel1.assertQueue('events-q');
@@ -1192,10 +1312,10 @@ describe('channel', () => {
       channel2.nackAll();
 
       const queue = await channel1.assertQueue('events-q');
-      expect(queue).to.have.property('messageCount', 4);
+      expect(queue).to.have.property('messageCount', 6);
     });
 
-    it('with truthy requeue re-enqueues messages', async () => {
+    it('with truthy requeue requeues messages', async () => {
       const channel1 = await connection.createChannel();
 
       await channel1.assertQueue('events-q');
@@ -1218,6 +1338,54 @@ describe('channel', () => {
 
       const queue = await channel1.assertQueue('events-q');
       expect(queue).to.have.property('messageCount', 6);
+    });
+
+    it('closes channel if attempting to ack message from other channel', async () => {
+      const channel1 = await connection.createChannel();
+      await channel1.assertQueue('event-q');
+
+      await channel1.sendToQueue('event-q', Buffer.from('MSG'));
+
+      const msg = await channel1.get('event-q');
+      channel1.nack(msg);
+
+      const channel2 = await connection.createChannel();
+
+      const doubleAckPromise = new Promise((resolve) => {
+        channel2.once('error', resolve);
+      });
+
+      channel2.ack(msg);
+
+      const error = await doubleAckPromise;
+      expect(error.code).to.equal(406);
+      expect(error.message).to.equal('Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1');
+
+      expect(channel2._closed).to.be.true;
+    });
+
+    it('closes channel if attempting to ack allUpTo message from other channel', async () => {
+      const channel1 = await connection.createChannel();
+      await channel1.assertQueue('event-q');
+
+      await channel1.sendToQueue('event-q', Buffer.from('MSG'));
+
+      const msg = await channel1.get('event-q');
+      channel1.nack(msg);
+
+      const channel2 = await connection.createChannel();
+
+      const doubleAckPromise = new Promise((resolve) => {
+        channel2.once('error', resolve);
+      });
+
+      channel2.ack(msg, true);
+
+      const error = await doubleAckPromise;
+      expect(error.code).to.equal(406);
+      expect(error.message).to.equal('Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1');
+
+      expect(channel2._closed).to.be.true;
     });
   });
 
@@ -1253,7 +1421,7 @@ describe('channel', () => {
       expect(queue).to.have.property('messageCount', 1);
     });
 
-    it('falsy requeue re-enqueues message on channel', async () => {
+    it('truthy requeue requeues message on channel', async () => {
       const channel1 = await connection.createChannel();
 
       await channel1.assertQueue('events-q');
@@ -1274,6 +1442,234 @@ describe('channel', () => {
 
       const queue = await channel1.assertQueue('events-q');
       expect(queue).to.have.property('messageCount', 6);
+    });
+
+    it('closes channel if attempting to double reject message', async () => {
+      const channel = await connection.createChannel();
+      await channel.assertQueue('event-q');
+
+      await channel.sendToQueue('event-q', Buffer.from('MSG'));
+
+      const msg = await channel.get('event-q');
+      channel.reject(msg);
+
+      const doubleAckPromise = new Promise((resolve) => {
+        channel.once('error', resolve);
+      });
+
+      channel.reject(msg);
+
+      const error = await doubleAckPromise;
+      expect(error.code).to.equal(406);
+      expect(error.message).to.equal('Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1');
+
+      expect(channel._closed).to.be.true;
+    });
+
+    it('closes channel if attempting to reject message from other channel', async () => {
+      const channel1 = await connection.createChannel();
+      await channel1.assertQueue('event-q');
+
+      await channel1.sendToQueue('event-q', Buffer.from('MSG'));
+
+      const msg = await channel1.get('event-q');
+      channel1.nack(msg);
+
+      const channel2 = await connection.createChannel();
+
+      const doubleAckPromise = new Promise((resolve) => {
+        channel2.once('error', resolve);
+      });
+
+      channel2.reject(msg);
+
+      const error = await doubleAckPromise;
+      expect(error.code).to.equal(406);
+      expect(error.message).to.equal('Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1');
+
+      expect(channel2._closed).to.be.true;
+    });
+  });
+
+  describe('#nack', () => {
+    let connection;
+    beforeEach(async () => {
+      connection = await connect('amqp://localhost');
+    });
+    afterEach(resetMock);
+
+    it('nacks message on channel', async () => {
+      const channel1 = await connection.createChannel();
+
+      await channel1.assertQueue('events-q');
+
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+
+      channel1.prefetch(1);
+      await channel1.consume('events-q', () => {});
+
+      const channel2 = await connection.createChannel();
+      channel2.prefetch(2);
+      await channel2.consume('events-q', (msg) => {
+        channel2.nack(msg);
+      });
+
+      const queue = await channel1.assertQueue('events-q');
+      expect(queue).to.have.property('messageCount', 1);
+    });
+
+    it('truthy requeue requeues message on channel', async () => {
+      const channel1 = await connection.createChannel();
+
+      await channel1.assertQueue('events-q');
+
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+
+      channel1.prefetch(1);
+      await channel1.consume('events-q', () => {}, { consumerTag: 'test-nack' });
+
+      const channel2 = await connection.createChannel();
+      const msg = await channel2.get('events-q');
+      channel2.nack(msg, false, true);
+
+      const queue = await channel1.assertQueue('events-q');
+      expect(queue).to.have.property('messageCount', 6);
+    });
+
+    it('truthy allUpTo and truthy requeue requeues message on channel', async () => {
+      const channel1 = await connection.createChannel();
+
+      await channel1.assertQueue('events-q');
+
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+
+      channel1.prefetch(1);
+      await channel1.consume('events-q', () => {}, { consumerTag: 'test-nack-1' });
+
+      const channel2 = await connection.createChannel();
+
+      channel2.prefetch(4);
+      await channel2.consume('events-q', (msg) => {
+        if (msg.fields.deliveryTag === 3) {
+          channel2.nack(msg, true, true);
+        }
+      }, { consumerTag: 'test-nack-2' });
+
+      const queue = await channel1.assertQueue('events-q');
+      expect(queue).to.have.property('messageCount', 6);
+    });
+
+    it('truthy allUpTo and falsy requeue, nacks messages', async () => {
+      const channel1 = await connection.createChannel();
+
+      await channel1.assertQueue('events-q');
+
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+      await channel1.sendToQueue('events-q', Buffer.from('MSG'));
+
+      channel1.prefetch(1);
+      await channel1.consume('events-q', () => {}, { consumerTag: 'test-nack-1' });
+
+      const channel2 = await connection.createChannel();
+      channel2.prefetch(4);
+
+      await channel2.consume('events-q', (msg) => {
+        if (msg.fields.deliveryTag === 5) {
+          channel2.nack(msg, true, false);
+        }
+      }, { consumerTag: 'test-nack-2' });
+
+      const queue = await channel1.assertQueue('events-q');
+      expect(queue).to.have.property('messageCount', 2);
+    });
+
+    it('closes channel if attempting to double nack message', async () => {
+      const channel = await connection.createChannel();
+      await channel.assertQueue('event-q');
+
+      await channel.sendToQueue('event-q', Buffer.from('MSG'));
+
+      const msg = await channel.get('event-q');
+      channel.nack(msg);
+
+      const doubleAckPromise = new Promise((resolve) => {
+        channel.once('error', resolve);
+      });
+
+      channel.nack(msg);
+
+      const error = await doubleAckPromise;
+      expect(error.code).to.equal(406);
+      expect(error.message).to.equal('Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1');
+
+      expect(channel._closed).to.be.true;
+    });
+
+    it('closes channel if attempting to nack message from other channel', async () => {
+      const channel1 = await connection.createChannel();
+      await channel1.assertQueue('event-q');
+
+      await channel1.sendToQueue('event-q', Buffer.from('MSG'));
+
+      const msg = await channel1.get('event-q');
+      channel1.nack(msg);
+
+      const channel2 = await connection.createChannel();
+
+      const doubleAckPromise = new Promise((resolve) => {
+        channel2.once('error', resolve);
+      });
+
+      channel2.nack(msg);
+
+      const error = await doubleAckPromise;
+      expect(error.code).to.equal(406);
+      expect(error.message).to.equal('Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1');
+
+      expect(channel2._closed).to.be.true;
+    });
+
+    it('closes channel if attempting to nack with allUpTo message from other channel', async () => {
+      const channel1 = await connection.createChannel();
+      await channel1.assertQueue('event-q');
+
+      await channel1.sendToQueue('event-q', Buffer.from('MSG'));
+
+      const msg = await channel1.get('event-q');
+      channel1.nack(msg);
+
+      const channel2 = await connection.createChannel();
+
+      const doubleAckPromise = new Promise((resolve) => {
+        channel2.once('error', resolve);
+      });
+
+      channel2.nack(msg, true);
+
+      const error = await doubleAckPromise;
+      expect(error.code).to.equal(406);
+      expect(error.message).to.equal('Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1');
+
+      expect(channel2._closed).to.be.true;
     });
   });
 });
