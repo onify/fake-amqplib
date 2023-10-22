@@ -1,7 +1,7 @@
 /// <reference types="amqplib" />
 /// <reference types="node" />
 
-import { Options, Connection, Channel, credentials } from "amqplib";
+import { Options, Connection, Channel } from "amqplib";
 import { EventEmitter } from "events";
 import { Broker } from 'smqp';
 

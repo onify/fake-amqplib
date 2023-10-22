@@ -7,6 +7,7 @@ const kClosed = Symbol.for('closed');
 const kEmitter = Symbol.for('event emitter');
 const kDeliveryTag = Symbol.for('channel delivery tag');
 const kPrefetch = Symbol.for('prefetch');
+const kChannelPrefetch = Symbol.for('channel prefetch');
 
 class AmqplibBroker extends Broker {
   constructor(...args) {
@@ -19,6 +20,9 @@ class AmqplibBroker extends Broker {
   _getMessageByDeliveryTag(queue, deliveryTag) {
     const q = this.getQueue(queue);
     return q.messages.find((m) => m.fields.deliveryTag === deliveryTag);
+  }
+  _getChannelConsumers(channelName) {
+    return this.getConsumers().filter((f) => f.options.channelName === channelName);
   }
 }
 
@@ -58,6 +62,7 @@ export class FakeAmqplibChannel {
     this.connection = connection;
 
     this[kPrefetch] = 10000;
+    this[kChannelPrefetch] = Infinity;
     this[kClosed] = false;
     this[kEmitter] = new EventEmitter();
     const channelName = this._channelName = `channel-${generateId()}`;
@@ -65,12 +70,12 @@ export class FakeAmqplibChannel {
     this._broker = broker;
 
     this._channelQueue = broker.assertQueue(`#${channelName}`);
-
     this._emitReturn = this._emitReturn.bind(this);
 
     broker.on('return', this._emitReturn);
 
     this._createChannelMessage = this._createChannelMessage.bind(this);
+    this._calculateChannelCapacity = this._calculateChannelCapacity.bind(this);
   }
   get _emitter() {
     return this[kEmitter];
@@ -252,6 +257,7 @@ export class FakeAmqplibChannel {
   consume(queue, onMessage, options = {}, callback) {
     const { _id: connId, _url: connUrl } = this.connection;
     const createMessage = this._createChannelMessage;
+    const calculateCapacity = this._calculateChannelCapacity;
     const channelName = this._channelName;
     const prefetch = this[kPrefetch];
 
@@ -267,16 +273,25 @@ export class FakeAmqplibChannel {
         throw new FakeAmqpError(`Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue '${queue}' in vhost '${connUrl.pathname}' in exclusive use"`, 403, true, true);
       }
 
-      const { consumerTag } = this.consume(queue, onMessage && handler, {
+      const consumer = this.consume(queue, onMessage && handler, {
         ...options,
         channelName,
-        prefetch,
+        prefetch: calculateCapacity(prefetch),
+        _consumerPrefetch: prefetch,
       });
-      return { consumerTag };
+
+      const capacityProp = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(consumer), 'capacity');
+      Object.defineProperty(consumer, 'capacity', {
+        get() {
+          return calculateCapacity(capacityProp.get.call(this));
+        },
+      });
+
+      return { consumerTag: consumer.consumerTag };
     }
 
     function handler(_, msg) {
-      onMessage(createMessage(msg));
+      onMessage(createMessage(msg, options.noAck));
     }
   }
   cancel(consumerTag, ...args) {
@@ -302,6 +317,7 @@ export class FakeAmqplibChannel {
         throw new FakeAmqpUnknownDeliveryTag(message.fields.deliveryTag);
       }
 
+      channelQ.ack(channelMessage, false);
       this.ack(msg, false);
     }
 
@@ -327,7 +343,7 @@ export class FakeAmqplibChannel {
         brokerMessage.ack(false);
       }
 
-      channelMessage.ack(false);
+      channelQ.ack(channelMessage, false);
       this.ack(msg, false);
     }
   }
@@ -345,14 +361,19 @@ export class FakeAmqplibChannel {
     }
   }
   reject(message, requeue = false) {
+    const deliveryTag = message.fields.deliveryTag;
+    const channelMessage = this._broker._getMessageByDeliveryTag(this._channelQueue.name, deliveryTag);
+    const channelQ = this._channelQueue;
+
     this._callBroker(rejectMessage);
 
     function rejectMessage() {
       const msg = message[kSmqp];
-      if (!msg.pending) {
-        throw new FakeAmqpUnknownDeliveryTag(message.fields.deliveryTag);
+      if (!channelMessage || !msg.pending) {
+        throw new FakeAmqpUnknownDeliveryTag(deliveryTag);
       }
 
+      channelQ.reject(channelMessage, false);
       this.reject(msg, requeue);
     }
   }
@@ -369,16 +390,17 @@ export class FakeAmqplibChannel {
     function nackMessage() {
       const msg = message[kSmqp];
       if (!channelMessage || !msg.pending) {
-        throw new FakeAmqpUnknownDeliveryTag(message.fields.deliveryTag);
+        throw new FakeAmqpUnknownDeliveryTag(deliveryTag);
       }
 
+      channelQ.nack(channelMessage, false, false);
       this.nack(msg, false, requeue);
     }
 
     function nackAllUpToMessage() {
       const msg = message[kSmqp];
       if (!channelMessage || !msg.pending) {
-        throw new FakeAmqpUnknownDeliveryTag(message.fields.deliveryTag);
+        throw new FakeAmqpUnknownDeliveryTag(deliveryTag);
       }
 
       const brokerMessages = [];
@@ -414,8 +436,19 @@ export class FakeAmqplibChannel {
       brokerMessage.reject(requeue);
     }
   }
-  prefetch(val) {
-    this[kPrefetch] = val;
+  prefetch(val, isChannelPrefetch) {
+    if (this.connection._version < 3.3) {
+      if (isChannelPrefetch !== undefined) {
+        return this.connection.close();
+      }
+      this[kChannelPrefetch] = val;
+    } else {
+      if (isChannelPrefetch) {
+        this[kChannelPrefetch] = val;
+      } else {
+        this[kPrefetch] = val;
+      }
+    }
   }
   on(...args) {
     return this[kEmitter].on(...args);
@@ -454,14 +487,17 @@ export class FakeAmqplibChannel {
   _createChannelMessage(smqpMessage, noAck) {
     const deliveryTag = this._broker._getNextDeliveryTag();
     const consumeMessage = new Message(smqpMessage, deliveryTag);
-    if (!noAck) this._channelQueue.queueMessage(consumeMessage.fields, consumeMessage);
+    if (!noAck) {
+      const channelQ = this._channelQueue;
+      channelQ.queueMessage(consumeMessage.fields, consumeMessage);
+    }
     return consumeMessage;
   }
   _teardown() {
     this[kClosed] = true;
     const channelName = this._channelName;
     const broker = this._broker;
-    const channelConsumers = broker.getConsumers().filter((f) => f.options.channelName === channelName);
+    const channelConsumers = broker._getChannelConsumers(channelName);
     channelConsumers.forEach((c) => broker.cancel(c.consumerTag));
 
     let msg;
@@ -471,6 +507,17 @@ export class FakeAmqplibChannel {
     }
 
     broker.off('return', this._emitReturn);
+  }
+  _calculateChannelCapacity(consumerCapacity) {
+    const channelPrefetch = this[kChannelPrefetch];
+    if (channelPrefetch === Infinity) return consumerCapacity;
+
+    const channelCapacity = channelPrefetch - this._channelQueue.messageCount;
+
+    let capacity = consumerCapacity;
+    if (channelCapacity <= 0) capacity = 0;
+    else if (channelCapacity < capacity) capacity = channelCapacity;
+    return capacity;
   }
 }
 

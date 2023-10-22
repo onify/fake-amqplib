@@ -43,18 +43,18 @@ describe('different behaviour between RabbitMQ versions', () => {
 
   describe('version 2.3', () => {
     it('before 2.3 there was no nack function, and it throws in this fake one', async () => {
-      setVersion('2.2');
-      const conn = await connect('amqp://localhost');
+      const fakeAmqplib = new FakeAmqplib('2.2');
+      const conn = await fakeAmqplib.connect('amqp://localhost');
       const channel = await conn.createChannel();
       expect(() => channel.nack()).to.throw(Error, /not implemented/d);
     });
   });
 
   describe('version < 3.2', () => {
-    let conn;
+    let fakeAmqplib3, conn;
     before(async () => {
-      setVersion('3.1');
-      conn = await connect('amqp://localhost');
+      fakeAmqplib3 = new FakeAmqplib('3.1');
+      conn = await fakeAmqplib3.connect('amqp://localhost');
     });
 
     describe('#deleteQueue', () => {
@@ -135,8 +135,8 @@ describe('different behaviour between RabbitMQ versions', () => {
     describe('#unbindQueue', () => {
       let connection, channel;
       beforeEach(async () => {
-        resetMock();
-        connection = await connect('amqp://localhost');
+        fakeAmqplib3.resetMock();
+        connection = await fakeAmqplib3.connect('amqp://localhost');
         channel = await connection.createChannel();
         await channel.assertExchange('events');
         await channel.assertQueue('events-q');
@@ -167,8 +167,8 @@ describe('different behaviour between RabbitMQ versions', () => {
     describe('#unbindExchange', () => {
       let connection, channel;
       beforeEach(async () => {
-        resetMock();
-        connection = await connect('amqp://localhost');
+        fakeAmqplib3.resetMock();
+        connection = await fakeAmqplib3.connect('amqp://localhost');
         channel = await connection.createChannel();
         await channel.assertExchange('events');
         await channel.assertExchange('sub-events');
@@ -198,15 +198,16 @@ describe('different behaviour between RabbitMQ versions', () => {
   });
 
   describe('version 3.2', () => {
+    let fakeAmqplib32;
     before(() => {
-      setVersion('3.2');
+      fakeAmqplib32 = new FakeAmqplib('3.2');
     });
 
     describe('#unbindQueue', () => {
       let connection, channel;
       beforeEach(async () => {
-        resetMock();
-        connection = await connect('amqp://localhost');
+        fakeAmqplib32.resetMock();
+        connection = await fakeAmqplib32.connect('amqp://localhost');
         channel = await connection.createChannel();
         await channel.assertExchange('events');
         await channel.assertQueue('events-q');
@@ -235,15 +236,30 @@ describe('different behaviour between RabbitMQ versions', () => {
     });
   });
 
-  // describe('#prefetch', () => {
-  //   let connection, channel;
-  //   it('setting prefetch with global flag before version 3.3 kills connection', () => {
-  //     const FakeAmqplib = new FakeAmqplib()
+  describe('#prefetch', () => {
+    let connection, channel;
+    let fakeAmqplib32;
+    before(() => {
+      fakeAmqplib32 = new FakeAmqplib('3.2');
+    });
 
-  //     connection = await connect('amqp://localhost');
-  //     channel = await connection.createChannel();
-  //     await channel.assertExchange('events');
-  //     await channel.assertQueue('events-q');
-  //   });
-  // });
+    it('setting prefetch with global flag before version 3.3 kills connection', async () => {
+      connection = await fakeAmqplib32.connect('amqp://localhost');
+      channel = await connection.createChannel();
+
+      channel.prefetch(4, true);
+
+      expect(channel._closed, 'channel closed').to.be.true;
+      expect(connection._closed, 'connection closed').to.be.true;
+
+      try {
+        await channel.assertExchange('events', 'topic');
+      } catch (err) {
+        var error = err;
+      }
+
+      expect(error).to.match(/closed/i);
+      expect(error.code).to.equal(504);
+    });
+  });
 });

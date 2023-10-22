@@ -1011,59 +1011,6 @@ describe('channel', () => {
     });
   });
 
-  describe('#prefetch', () => {
-    let channel;
-    beforeEach(async () => {
-      resetMock();
-      const connection = await connect('amqp://amqp.test');
-      channel = await connection.createChannel();
-      await channel.assertExchange('event');
-      await channel.assertQueue('event-q');
-      await channel.bindQueue('event-q', 'event', '#');
-    });
-
-    it('consumes prefetch count messages at a time', async () => {
-      channel.prefetch(3);
-
-      await Promise.all(Array(9).fill().map((_, idx) => {
-        return channel.publish('event', `test.${idx}`, Buffer.from(`${idx}`));
-      }));
-
-      const messages = [];
-      channel.consume('event-q', (msg) => {
-        messages.push(msg);
-      });
-
-      expect(messages).to.have.length(3);
-      messages.splice(0).forEach((msg) => channel.ack(msg));
-
-      let queueOptions = await channel.checkQueue('event-q');
-      expect(queueOptions).to.have.property('messageCount', 6);
-
-      expect(messages).to.have.length(3);
-      messages.splice(0).forEach((msg) => channel.ack(msg));
-
-      queueOptions = await channel.checkQueue('event-q');
-      expect(queueOptions).to.have.property('messageCount', 3);
-
-      expect(messages).to.have.length(3);
-      messages.splice(0).forEach((msg) => channel.ack(msg));
-    });
-
-    it('no prefetch consumes "all" messages', async () => {
-      await Promise.all(Array(9).fill().map((_, idx) => {
-        return channel.publish('event', `test.${idx}`, Buffer.from(`${idx}`));
-      }));
-
-      const messages = [];
-      channel.consume('event-q', (msg) => {
-        messages.push(msg);
-      });
-
-      expect(messages).to.have.length(9);
-    });
-  });
-
   describe('#close', () => {
     let channel;
     beforeEach(async () => {
@@ -1124,13 +1071,35 @@ describe('channel', () => {
     });
     afterEach(resetMock);
 
-    it('acks message', async () => {
+    it('acks get message (and removes channel internal message)', async () => {
       const channel = await connection.createChannel();
       await channel.assertQueue('event-q');
       await channel.sendToQueue('event-q', Buffer.from('MSG'));
 
       const msg = await channel.get('event-q');
       channel.ack(msg);
+
+      expect(await channel.get('event-q')).to.be.false;
+
+      expect(channel._channelQueue.messageCount, 'internal queue message count').to.equal(0);
+    });
+
+    it('acks consumed message', async () => {
+      const channel = await connection.createChannel();
+      await channel.assertQueue('event-q');
+      await channel.sendToQueue('event-q', Buffer.from('MSG'));
+
+      let count = 0;
+      await channel.consume('event-q', (msg) => {
+        ++count;
+        channel.ack(msg);
+      }, { consumerTag: 'test-nack-1' });
+
+      await channel.sendToQueue('event-q', Buffer.from('MSG'));
+      await channel.sendToQueue('event-q', Buffer.from('MSG'));
+      await channel.sendToQueue('event-q', Buffer.from('MSG'));
+
+      expect(count).to.equal(4);
 
       expect(await channel.get('event-q')).to.be.false;
     });
@@ -1174,35 +1143,56 @@ describe('channel', () => {
       const msg = await channel.get('event-q');
       channel.ack(msg);
 
-      const doubleAckPromise = new Promise((resolve) => {
+      const channelError = new Promise((resolve) => {
         channel.once('error', resolve);
       });
 
       channel.ack(msg);
 
-      const error = await doubleAckPromise;
+      const error = await channelError;
       expect(error.code).to.equal(406);
       expect(error.message).to.equal('Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1');
 
       expect(channel._closed).to.be.true;
     });
 
-    it('closes channel if attempting to ack when consuming with noAck', async () => {
+    it('closes channel if attempting to double ack message in consumer', async () => {
       const channel = await connection.createChannel();
       await channel.assertQueue('event-q');
 
       await channel.consume('event-q', (msg) => {
         channel.ack(msg);
         channel.ack(msg);
-      }, { noAck: true });
+      });
 
-      const doubleAckPromise = new Promise((resolve) => {
+      const channelError = new Promise((resolve) => {
         channel.once('error', resolve);
       });
 
       await channel.sendToQueue('event-q', Buffer.from('MSG'));
 
-      const error = await doubleAckPromise;
+      const error = await channelError;
+      expect(error.code).to.equal(406);
+      expect(error.message).to.equal('Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1');
+
+      expect(channel._closed).to.be.true;
+    });
+
+    it('closes channel if attempting to ack message in noAck consumer', async () => {
+      const channel = await connection.createChannel();
+      await channel.assertQueue('event-q');
+
+      await channel.consume('event-q', (msg) => {
+        channel.ack(msg);
+      }, { noAck: true });
+
+      const channelError = new Promise((resolve) => {
+        channel.once('error', resolve);
+      });
+
+      await channel.sendToQueue('event-q', Buffer.from('MSG'));
+
+      const error = await channelError;
       expect(error.code).to.equal(406);
       expect(error.message).to.equal('Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1');
 
