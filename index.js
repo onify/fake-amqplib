@@ -4,7 +4,6 @@ import { format as urlFormat } from 'url';
 
 const kSmqp = Symbol.for('smqp');
 const kClosed = Symbol.for('closed');
-const kEmitter = Symbol.for('event emitter');
 const kDeliveryTag = Symbol.for('channel delivery tag');
 const kPrefetch = Symbol.for('prefetch');
 const kChannelPrefetch = Symbol.for('channel prefetch');
@@ -57,14 +56,14 @@ function Message(smqpMessage, deliveryTag) {
   this.properties = { ...smqpMessage.properties };
 }
 
-export class FakeAmqplibChannel {
+export class FakeAmqplibChannel extends EventEmitter {
   constructor(broker, connection) {
+    super();
     this.connection = connection;
 
     this[kPrefetch] = 10000;
     this[kChannelPrefetch] = Infinity;
     this[kClosed] = false;
-    this[kEmitter] = new EventEmitter();
     const channelName = this._channelName = `channel-${generateId()}`;
     this._version = connection._version;
     this._broker = broker;
@@ -76,9 +75,6 @@ export class FakeAmqplibChannel {
 
     this._createChannelMessage = this._createChannelMessage.bind(this);
     this._calculateChannelCapacity = this._calculateChannelCapacity.bind(this);
-  }
-  get _emitter() {
-    return this[kEmitter];
   }
   get _closed() {
     return this[kClosed];
@@ -187,7 +183,7 @@ export class FakeAmqplibChannel {
     this.checkExchange(exchange).then(() => {
       return this._callBroker(...args);
     }).catch((err) => {
-      this[kEmitter].emit('error', err);
+      this.emit('error', err);
     });
 
     return true;
@@ -212,7 +208,7 @@ export class FakeAmqplibChannel {
     this.checkQueue(queue).then(() => {
       return this._callBroker(...args);
     }).catch((err) => {
-      this[kEmitter].emit('error', err);
+      this.emit('error', err);
     });
 
     return true;
@@ -300,7 +296,7 @@ export class FakeAmqplibChannel {
   close(callback) {
     if (this[kClosed]) return;
     this._teardown();
-    this[kEmitter].emit('close');
+    this.emit('close');
     return resolveOrCallback(callback);
   }
   ack(message, allUpTo) {
@@ -327,18 +323,7 @@ export class FakeAmqplibChannel {
         throw new FakeAmqpUnknownDeliveryTag(message.fields.deliveryTag);
       }
 
-      const brokerMessages = [];
-      const consumer = channelQ.consume((_, cmsg) => {
-        const msgDeliveryTag = cmsg.fields.deliveryTag;
-        if (msgDeliveryTag >= deliveryTag) {
-          return channelQ.cancel(cmsg.fields.consumerTag);
-        }
-        brokerMessages.push(cmsg.content[kSmqp]);
-        cmsg.ack();
-      }, { prefetch: 10000 });
-
-      consumer.cancel();
-
+      const brokerMessages = allUpToDeliveryTag(channelQ, deliveryTag, 'ack', false);
       for (const brokerMessage of brokerMessages) {
         brokerMessage.ack(false);
       }
@@ -403,18 +388,7 @@ export class FakeAmqplibChannel {
         throw new FakeAmqpUnknownDeliveryTag(deliveryTag);
       }
 
-      const brokerMessages = [];
-      const consumer = channelQ.consume((_, cmsg) => {
-        const msgDeliveryTag = cmsg.fields.deliveryTag;
-        if (msgDeliveryTag >= deliveryTag) {
-          return channelQ.cancel(cmsg.fields.consumerTag);
-        }
-        brokerMessages.push(cmsg.content[kSmqp]);
-        cmsg.nack();
-      }, { prefetch: 10000 });
-
-      consumer.cancel();
-
+      const brokerMessages = allUpToDeliveryTag(channelQ, deliveryTag, 'nack', false, false);
       for (const brokerMessage of brokerMessages) {
         brokerMessage.nack(false, requeue);
       }
@@ -450,12 +424,6 @@ export class FakeAmqplibChannel {
       }
     }
   }
-  on(...args) {
-    return this[kEmitter].on(...args);
-  }
-  once(...args) {
-    return this[kEmitter].once(...args);
-  }
   _callBroker(fn, ...args) {
     let [ poppedCb ] = args.slice(-1);
     if (typeof poppedCb === 'function') args.splice(-1);
@@ -472,7 +440,7 @@ export class FakeAmqplibChannel {
       } catch (err) {
         if (err._killConnection) this.connection.close();
         else if (err._killChannel) this._teardown();
-        if (err._emit) this._emitter.emit('error', err);
+        if (err._emit) this.emit('error', err);
         if (!poppedCb) return reject(err);
         poppedCb(err);
         return resolve();
@@ -481,7 +449,7 @@ export class FakeAmqplibChannel {
   }
   _emitReturn({ fields, content, properties }) {
     process.nextTick(() => {
-      this[kEmitter].emit('return', { fields, content, properties });
+      this.emit('return', { fields, content, properties });
     });
   }
   _createChannelMessage(smqpMessage, noAck) {
@@ -533,7 +501,7 @@ export class FakeAmqplibConfirmChannel extends FakeAmqplibChannel {
     this.checkExchange(exchange).then(() => {
       return this._callBroker(...args);
     }).catch((err) => {
-      this[kEmitter].emit('error', err);
+      this.emit('error', err);
     });
 
     return true;
@@ -548,16 +516,16 @@ export class FakeAmqplibConfirmChannel extends FakeAmqplibChannel {
     this.checkQueue(queue).then(() => {
       return this._callBroker(...args);
     }).catch((err) => {
-      this[kEmitter].emit('error', err);
+      this.emit('error', err);
     });
 
     return true;
   }
 }
 
-export class FakeAmqplibConnection {
+export class FakeAmqplibConnection extends EventEmitter {
   constructor(broker, version, amqpUrl) {
-    this[kEmitter] = new EventEmitter();
+    super();
     this[kClosed] = false;
     this._channels = [];
     this._url = normalizeAmqpUrl(amqpUrl);
@@ -567,9 +535,6 @@ export class FakeAmqplibConnection {
   }
   get _closed() {
     return this[kClosed];
-  }
-  get _emitter() {
-    return this[kEmitter];
   }
   get connection() {
     return {
@@ -604,15 +569,9 @@ export class FakeAmqplibConnection {
 
     this._channels.splice(0).forEach((channel) => channel.close());
 
-    this[kEmitter].emit('close');
+    this.emit('close');
 
     return resolveOrCallback(args.slice(-1)[0]);
-  }
-  on(...args) {
-    return this[kEmitter].on(...args);
-  }
-  once(...args) {
-    return this[kEmitter].once(...args);
   }
 }
 
@@ -644,7 +603,7 @@ FakeAmqplib.prototype.connectSync = function fakeConnectSync(amqpUrl, ...args) {
 
   connections.push(connection);
 
-  connection._emitter.once('close', () => {
+  connection.once('close', () => {
     const idx = connections.indexOf(connection);
     if (idx > -1) connections.splice(idx, 1);
   });
@@ -753,6 +712,23 @@ function addConfirmCallback(broker, options, callback) {
   }
 
   return [ options, confirmCallback ];
+}
+
+function allUpToDeliveryTag(q, deliveryTag, op, ...args) {
+  const brokerMessages = [];
+
+  const consumer = q.consume((_, cmsg) => {
+    const msgDeliveryTag = cmsg.fields.deliveryTag;
+    if (msgDeliveryTag >= deliveryTag) {
+      return q.cancel(cmsg.fields.consumerTag);
+    }
+    brokerMessages.push(cmsg.content[kSmqp]);
+    cmsg[op](...args);
+  }, { prefetch: Infinity });
+
+  consumer.cancel();
+
+  return brokerMessages;
 }
 
 const defaultFake = new FakeAmqplib('3.5');

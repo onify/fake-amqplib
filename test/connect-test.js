@@ -1,5 +1,3 @@
-import { EventEmitter } from 'events';
-
 import { connect, connectSync, connections, resetMock, setVersion } from '../index.js';
 
 describe('fake amqplib connections', () => {
@@ -14,7 +12,6 @@ describe('fake amqplib connections', () => {
         expect(connection).have.property('close').that.is.a('function');
         expect(connection).have.property('on').that.is.a('function');
         expect(connection).have.property('once').that.is.a('function');
-        expect(connection).have.property('_emitter').that.is.instanceof(EventEmitter);
         expect(connection).have.property('_closed');
         done();
       });
@@ -35,11 +32,11 @@ describe('fake amqplib connections', () => {
       expect(conn._url.toString()).to.equal('amqp://localhost:5672/?locale=sv_SE');
     });
 
-    it('connection with the same amqpUrl shares broker', async () => {
+    it('connections with the same amqpUrl shares broker', async () => {
       const conn1 = await connect('amqp://testrabbit:5672');
       const conn2 = await connect('amqp://testrabbit:5672');
 
-      expect(conn1._broker === conn2._broker).to.be.true;
+      expect(conn1._broker === conn2._broker, 'shared broker').to.be.true;
       expect(conn1 === conn2, 'same connection').to.be.false;
     });
 
@@ -47,7 +44,7 @@ describe('fake amqplib connections', () => {
       const conn1 = await connect(new URL('amqp://testrabbit:5672'));
       const conn2 = await connect(new URL('amqp://testrabbit:5672'));
 
-      expect(conn1._broker === conn2._broker).to.be.true;
+      expect(conn1._broker === conn2._broker, 'shared broker').to.be.true;
       expect(conn1 === conn2, 'same connection').to.be.false;
     });
 
@@ -69,7 +66,7 @@ describe('fake amqplib connections', () => {
 
       const conn2 = await connect({ ...connObj });
 
-      expect(conn1._broker === conn2._broker).to.be.true;
+      expect(conn1._broker === conn2._broker, 'shared broker').to.be.true;
       expect(conn1 === conn2, 'same connection').to.be.false;
     });
 
@@ -84,7 +81,7 @@ describe('fake amqplib connections', () => {
       const conn1 = await connect('amqp://testrabbit:5672?heartbeat=10');
       const conn2 = await connect('amqp://testrabbit:5672');
 
-      expect(conn1._broker === conn2._broker).to.be.true;
+      expect(conn1._broker === conn2._broker, 'shared broker').to.be.true;
       expect(conn1 === conn2, 'same connection').to.be.false;
     });
 
@@ -92,7 +89,7 @@ describe('fake amqplib connections', () => {
       const conn1 = await connect('amqp://username@testrabbit:5672');
       const conn2 = await connect('amqp://username:password@testrabbit:5672');
 
-      expect(conn1._broker === conn2._broker).to.be.true;
+      expect(conn1._broker === conn2._broker, 'shared broker').to.be.true;
       expect(conn1 === conn2, 'same connection').to.be.false;
     });
 
@@ -226,7 +223,7 @@ describe('fake amqplib connections', () => {
       const conn1 = await connect('amqp://testrabbit:5672');
       const conn2 = connectSync('amqp://testrabbit:5672');
 
-      expect(conn1._broker === conn2._broker).to.be.true;
+      expect(conn1._broker === conn2._broker, 'shared broker').to.be.true;
       expect(conn1 === conn2, 'same connection').to.be.false;
     });
   });

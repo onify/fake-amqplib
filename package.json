@@ -1,9 +1,10 @@
 {
   "name": "@onify/fake-amqplib",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "Fake amqplib",
   "type": "module",
   "exports": {
+    "types": "./index.d.ts",
     "require": "./main.cjs",
     "import": "./index.js"
   },

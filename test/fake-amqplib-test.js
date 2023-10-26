@@ -1,5 +1,3 @@
-import { EventEmitter } from 'events';
-
 import { connect, resetMock, FakeAmqplib } from '../index.js';
 
 describe('fake amqplib', () => {
@@ -48,7 +46,6 @@ describe('fake amqplib', () => {
         expect(channel).to.have.property('on').that.is.a('function');
         expect(channel).to.have.property('once').that.is.a('function');
         expect(channel).to.have.property('close').that.is.a('function');
-        expect(channel).to.have.property('_emitter').that.is.instanceof(EventEmitter);
         done();
       });
     });
