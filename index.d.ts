@@ -1,28 +1,28 @@
 /// <reference types="amqplib" />
 /// <reference types="node" />
 
-import { Options, Connection, Channel, credentials } from "amqplib";
+import { Options, Connection, Channel } from "amqplib";
 import { EventEmitter } from "events";
 import { Broker } from 'smqp';
 
 export interface FakeAmqplibChannel extends Channel {
+  /** Channel name and identifier, for faking purposes */
   _channelName: string;
-  _version: number;
   _broker: Broker;
+  _version: number;
   new(broker: Broker, connection: FakeAmqplibConnection): FakeAmqplibChannel;
   get _closed(): boolean;
-  get _emitter(): EventEmitter;
 }
 
 export interface FakeAmqplibConnection extends Connection {
   _channels: FakeAmqplibChannel[];
   _url: URL;
+  /** Connection identifier, for faking purposes */
   _id: string;
   _broker: Broker;
   _version: number;
   new(broker: Broker, version: number, amqpUrl: string, options?: any): FakeAmqplibConnection;
   get _closed(): boolean;
-  get _emitter(): EventEmitter;
 }
 
 interface SocketOptions {

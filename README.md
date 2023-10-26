@@ -14,7 +14,7 @@ Mocked version of https://www.npmjs.com/package/amqplib.
 
 ## RabbitMQ versions
 
-Some behaviour differs between versions. To specify your version of RabbitMQ you can call `setVersion(minorVersionFloatOrString)`. Default version is 3.5.
+RabbitMQ behaviour differs between versions. To specify your version of RabbitMQ you can call `setVersion(minorVersionFloatOrString)`. Default version is 3.5.
 
 Example:
 ```js
@@ -26,7 +26,7 @@ var fakeAmqp = require('@onify/fake-amqplib');
   const conn2 = await fakeAmqp.connect('amqp://rabbit2-2');
 
   fakeAmqp.setVersion('3.2');
-  const conn3 = await fakeAmqp.connect('amqp://rabbit3-1');
+  const conn3 = await fakeAmqp.connect('amqp://rabbit3-2');
 
   fakeAmqp.setVersion('3.7');
   const conn37 = await fakeAmqp.connect('amqp://rabbit3-7');
@@ -35,7 +35,7 @@ var fakeAmqp = require('@onify/fake-amqplib');
 
 ## Mocking amqplib
 
-You might want to override `amqplib` with `@onify/fake-amqplib` in tests. This can be done this way:
+You might want to override `amqplib` with `@onify/fake-amqplib` in tests. This can be done in a number of ways.
 
 ### CommonJS
 
@@ -72,7 +72,7 @@ Example on how to mock amqplib import when working with modules.
 
 **[Quibble](https://www.npmjs.com/package/quibble) mocha example**
 
-Both amqplib and fake-amqplib have to be mocked if reset mock is used during testing.
+Both amqplib and fake-amqplib have to be quibbled if reset mock is used during testing.
 
 _test/setup.js_
 ```js

@@ -1,11 +1,18 @@
 Changelog
 =========
 
+# 3.0.0
+
+- acking/nacking/rejecting an already acked message kills the channel with an unknown delivery tag error (406)
+- support per channel prefetch, kills connection if prefetch is called with global argument before version 3.3
+- nackAll requeue argument is true by default, as per documentation
+- fake connection and channel inherits from EventEmitter
+
 # 2.0.0
 
 - drop node 12 support
 - convert to esm with exports for node
-- smqp@8
+- bump `smqp@8`
 - lint some
 
 # 1.0.0
