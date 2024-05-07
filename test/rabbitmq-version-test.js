@@ -46,7 +46,7 @@ describe('different behaviour between RabbitMQ versions', () => {
       const fakeAmqplib = new FakeAmqplib('2.2');
       const conn = await fakeAmqplib.connect('amqp://localhost');
       const channel = await conn.createChannel();
-      expect(() => channel.nack()).to.throw(Error, /not implemented/d);
+      expect(() => channel.nack()).to.throw(Error, /not implemented/i);
     });
   });
 
@@ -58,7 +58,7 @@ describe('different behaviour between RabbitMQ versions', () => {
     });
 
     describe('#deleteQueue', () => {
-      it('threw if queue didn\'t exist', async () => {
+      it("threw if queue didn't exist", async () => {
         const channel = await conn.createChannel();
 
         try {
@@ -70,7 +70,7 @@ describe('different behaviour between RabbitMQ versions', () => {
         expect(err).to.be.ok.and.have.property('code', 404);
       });
 
-      it('returned error in callback if queue didn\'t exist', (done) => {
+      it("returned error in callback if queue didn't exist", (done) => {
         conn.createChannel((cerr, channel) => {
           if (cerr) return done(cerr);
 
@@ -83,7 +83,7 @@ describe('different behaviour between RabbitMQ versions', () => {
     });
 
     describe('#purgeQueue', () => {
-      it('threw if queue didn\'t exist', async () => {
+      it("threw if queue didn't exist", async () => {
         const channel = await conn.createChannel();
 
         try {
@@ -95,7 +95,7 @@ describe('different behaviour between RabbitMQ versions', () => {
         expect(err).to.be.ok.and.have.property('code', 404);
       });
 
-      it('returned error in callback if queue didn\'t exist', (done) => {
+      it("returned error in callback if queue didn't exist", (done) => {
         conn.createChannel((cerr, channel) => {
           if (cerr) return done(cerr);
 
@@ -108,7 +108,7 @@ describe('different behaviour between RabbitMQ versions', () => {
     });
 
     describe('#deleteExchange', () => {
-      it('threw if exchange didn\'t exist', async () => {
+      it("threw if exchange didn't exist", async () => {
         const channel = await conn.createChannel();
 
         try {
@@ -120,7 +120,7 @@ describe('different behaviour between RabbitMQ versions', () => {
         expect(err).to.be.ok.and.have.property('code', 404);
       });
 
-      it('returned error in callback if exchange didn\'t exist', (done) => {
+      it("returned error in callback if exchange didn't exist", (done) => {
         conn.createChannel((cerr, channel) => {
           if (cerr) return done(cerr);
 
@@ -142,21 +142,25 @@ describe('different behaviour between RabbitMQ versions', () => {
         await channel.assertQueue('events-q');
       });
 
-      it('threw and closed connection if binding didn\'t exist', async () => {
+      it("threw and closed connection if binding didn't exist", async () => {
         try {
           await channel.unbindQueue('events-q', 'events', 'event.#');
         } catch (e) {
           var err = e;
         }
 
-        expect(err).to.match(/binding/).and.have.property('code', 404);
+        expect(err)
+          .to.match(/binding/)
+          .and.have.property('code', 404);
         expect(channel._closed, 'closed channel').to.be.true;
         expect(connection._closed, 'closed connection').to.be.true;
       });
 
-      it('returned error in callback and closed connection if binding didn\'t exist', (done) => {
+      it("returned error in callback and closed connection if binding didn't exist", (done) => {
         channel.unbindQueue('events-q', 'events', 'event.#', (err) => {
-          expect(err).to.match(/binding/).and.have.property('code', 404);
+          expect(err)
+            .to.match(/binding/)
+            .and.have.property('code', 404);
           expect(channel._closed, 'closed channel').to.be.true;
           expect(connection._closed, 'closed connection').to.be.true;
           done();
@@ -174,21 +178,25 @@ describe('different behaviour between RabbitMQ versions', () => {
         await channel.assertExchange('sub-events');
       });
 
-      it('threw and closed channel if binding didn\'t exist', async () => {
+      it("threw and closed channel if binding didn't exist", async () => {
         try {
           await channel.unbindExchange('sub-events', 'events', 'event.#');
         } catch (e) {
           var err = e;
         }
 
-        expect(err).to.match(/binding/).and.have.property('code', 404);
+        expect(err)
+          .to.match(/binding/)
+          .and.have.property('code', 404);
         expect(channel._closed, 'closed channel').to.be.true;
         expect(connection._closed, 'closed connection').to.be.false;
       });
 
-      it('returned error in callback if binding didn\'t exist', (done) => {
+      it("returned error in callback if binding didn't exist", (done) => {
         channel.unbindExchange('sub-events', 'events', 'event.#', (err) => {
-          expect(err).to.match(/binding/).and.have.property('code', 404);
+          expect(err)
+            .to.match(/binding/)
+            .and.have.property('code', 404);
           expect(channel._closed, 'closed channel').to.be.true;
           expect(connection._closed, 'closed connection').to.be.false;
           done();
@@ -213,21 +221,25 @@ describe('different behaviour between RabbitMQ versions', () => {
         await channel.assertQueue('events-q');
       });
 
-      it('threw and closed channel if binding didn\'t exist', async () => {
+      it("threw and closed channel if binding didn't exist", async () => {
         try {
           await channel.unbindQueue('events-q', 'events', 'event.#');
         } catch (e) {
           var err = e;
         }
 
-        expect(err).to.match(/binding/).and.have.property('code', 404);
+        expect(err)
+          .to.match(/binding/)
+          .and.have.property('code', 404);
         expect(channel._closed, 'closed channel').to.be.true;
         expect(connection._closed, 'closed connection').to.be.false;
       });
 
-      it('returned error in callback and closed channel if binding didn\'t exist', (done) => {
+      it("returned error in callback and closed channel if binding didn't exist", (done) => {
         channel.unbindQueue('events-q', 'events', 'event.#', (err) => {
-          expect(err).to.match(/binding/).and.have.property('code', 404);
+          expect(err)
+            .to.match(/binding/)
+            .and.have.property('code', 404);
           expect(channel._closed, 'closed channel').to.be.true;
           expect(connection._closed, 'closed connection').to.be.false;
           done();

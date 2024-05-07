@@ -1,5 +1,8 @@
-Changelog
-=========
+# Changelog
+
+# 3.1.0
+
+- use prettier for formatting rules since they are deprecated in eslint
 
 # 3.0.0
 

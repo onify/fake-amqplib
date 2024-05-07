@@ -17,6 +17,7 @@ Mocked version of https://www.npmjs.com/package/amqplib.
 RabbitMQ behaviour differs between versions. To specify your version of RabbitMQ you can call `setVersion(minorVersionFloatOrString)`. Default version is 3.5.
 
 Example:
+
 ```js
 var fakeAmqp = require('@onify/fake-amqplib');
 
@@ -30,7 +31,7 @@ var fakeAmqp = require('@onify/fake-amqplib');
 
   fakeAmqp.setVersion('3.7');
   const conn37 = await fakeAmqp.connect('amqp://rabbit3-7');
-})()
+})();
 ```
 
 ## Mocking amqplib
@@ -75,6 +76,7 @@ Example on how to mock amqplib import when working with modules.
 Both amqplib and fake-amqplib have to be quibbled if reset mock is used during testing.
 
 _test/setup.js_
+
 ```js
 import * as fakeAmqpLib from '@onify/fake-amqplib';
 import { connect as fakeConnect } from '@onify/fake-amqplib';
@@ -88,19 +90,17 @@ import quibble from 'quibble';
 ```
 
 _.mocharc.json_ (true for node version < 20)
+
 ```json
 {
   "recursive": true,
   "require": ["test/setup.js"],
-  "node-option": [
-    "experimental-specifier-resolution=node",
-    "no-warnings",
-    "loader=quibble"
-  ]
+  "node-option": ["experimental-specifier-resolution=node", "no-warnings", "loader=quibble"]
 }
 ```
 
 _test/amqplib-connection-test.js_
+
 ```js
 import assert from 'node:assert';
 import { connect } from 'amqplib';

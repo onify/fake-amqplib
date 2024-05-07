@@ -19,9 +19,13 @@ describe('channel #prefetch', () => {
     afterEach(() => fakeAmqplib35.resetMock());
 
     it('no prefetch consumes "all" (10000 in this fake one) messages', async () => {
-      await Promise.all(Array(9).fill().map((_, idx) => {
-        return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-      }));
+      await Promise.all(
+        Array(9)
+          .fill()
+          .map((_, idx) => {
+            return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
+          }),
+      );
 
       const messages = [];
       channel.consume('event-q', (msg) => {
@@ -35,9 +39,13 @@ describe('channel #prefetch', () => {
       it('prefetch limits number of messages sent per consumer', async () => {
         channel.prefetch(3);
 
-        await Promise.all(Array(9).fill().map((_, idx) => {
-          return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-        }));
+        await Promise.all(
+          Array(9)
+            .fill()
+            .map((_, idx) => {
+              return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
+            }),
+        );
 
         const messages = [];
         channel.consume('event-q', (msg) => {
@@ -66,21 +74,37 @@ describe('channel #prefetch', () => {
         channel.prefetch(10, true);
 
         const messages = [];
-        channel.consume('event-q', (msg) => {
-          messages.push(msg);
-        }, { consumerTag: 'event-tag' });
+        channel.consume(
+          'event-q',
+          (msg) => {
+            messages.push(msg);
+          },
+          { consumerTag: 'event-tag' },
+        );
 
-        channel.consume('other-q', (msg) => {
-          messages.push(msg);
-        }, { consumerTag: 'other-tag' });
+        channel.consume(
+          'other-q',
+          (msg) => {
+            messages.push(msg);
+          },
+          { consumerTag: 'other-tag' },
+        );
 
-        await Promise.all(Array(31).fill().map((_, idx) => {
-          return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-        }));
+        await Promise.all(
+          Array(31)
+            .fill()
+            .map((_, idx) => {
+              return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
+            }),
+        );
 
-        await Promise.all(Array(31).fill().map((_, idx) => {
-          return channel.publish('event', `other.${idx}`, Buffer.from(`${idx}`));
-        }));
+        await Promise.all(
+          Array(31)
+            .fill()
+            .map((_, idx) => {
+              return channel.publish('event', `other.${idx}`, Buffer.from(`${idx}`));
+            }),
+        );
 
         expect(messages).to.have.length(10);
       });
@@ -89,17 +113,29 @@ describe('channel #prefetch', () => {
         channel.prefetch(10, true);
 
         const messages = [];
-        channel.consume('event-q', (msg) => {
-          messages.push(msg);
-        }, { consumerTag: 'event-tag' });
+        channel.consume(
+          'event-q',
+          (msg) => {
+            messages.push(msg);
+          },
+          { consumerTag: 'event-tag' },
+        );
 
-        channel.consume('other-q', (msg) => {
-          messages.push(msg);
-        }, { consumerTag: 'other-tag' });
+        channel.consume(
+          'other-q',
+          (msg) => {
+            messages.push(msg);
+          },
+          { consumerTag: 'other-tag' },
+        );
 
-        await Promise.all(Array(31).fill().map((_, idx) => {
-          return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-        }));
+        await Promise.all(
+          Array(31)
+            .fill()
+            .map((_, idx) => {
+              return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
+            }),
+        );
 
         expect(messages, 'before ack consumed messages').to.have.length(10);
 
@@ -114,13 +150,21 @@ describe('channel #prefetch', () => {
         channel.prefetch(10, true);
 
         const messages = [];
-        channel.consume('event-q', (msg) => {
-          messages.push(msg);
-        }, { consumerTag: 'event-tag' });
+        channel.consume(
+          'event-q',
+          (msg) => {
+            messages.push(msg);
+          },
+          { consumerTag: 'event-tag' },
+        );
 
-        await Promise.all(Array(31).fill().map((_, idx) => {
-          return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-        }));
+        await Promise.all(
+          Array(31)
+            .fill()
+            .map((_, idx) => {
+              return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
+            }),
+        );
 
         expect(messages, 'before ack consumed messages').to.have.length(10);
 
@@ -135,13 +179,21 @@ describe('channel #prefetch', () => {
         channel.prefetch(10, true);
 
         const messages = [];
-        channel.consume('event-q', (msg) => {
-          messages.push(msg);
-        }, { consumerTag: 'event-tag' });
+        channel.consume(
+          'event-q',
+          (msg) => {
+            messages.push(msg);
+          },
+          { consumerTag: 'event-tag' },
+        );
 
-        await Promise.all(Array(31).fill().map((_, idx) => {
-          return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-        }));
+        await Promise.all(
+          Array(31)
+            .fill()
+            .map((_, idx) => {
+              return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
+            }),
+        );
 
         expect(messages, 'before ack consumed messages').to.have.length(10);
 
@@ -156,13 +208,21 @@ describe('channel #prefetch', () => {
         channel.prefetch(10, true);
 
         const messages = [];
-        channel.consume('event-q', (msg) => {
-          messages.push(msg);
-        }, { consumerTag: 'event-tag' });
+        channel.consume(
+          'event-q',
+          (msg) => {
+            messages.push(msg);
+          },
+          { consumerTag: 'event-tag' },
+        );
 
-        await Promise.all(Array(31).fill().map((_, idx) => {
-          return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-        }));
+        await Promise.all(
+          Array(31)
+            .fill()
+            .map((_, idx) => {
+              return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
+            }),
+        );
 
         expect(messages).to.have.length(10);
 
@@ -178,22 +238,38 @@ describe('channel #prefetch', () => {
         channel.prefetch(20, true);
         await channel.assertQueue('other-q');
 
-        await Promise.all(Array(31).fill().map((_, idx) => {
-          return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-        }));
+        await Promise.all(
+          Array(31)
+            .fill()
+            .map((_, idx) => {
+              return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
+            }),
+        );
 
-        await Promise.all(Array(31).fill().map((_, idx) => {
-          return channel.publish('event', `other.${idx}`, Buffer.from(`${idx}`));
-        }));
+        await Promise.all(
+          Array(31)
+            .fill()
+            .map((_, idx) => {
+              return channel.publish('event', `other.${idx}`, Buffer.from(`${idx}`));
+            }),
+        );
 
         const messages = [];
-        channel.consume('event-q', (msg) => {
-          messages.push(msg);
-        }, { consumerTag: 'event-tag' });
+        channel.consume(
+          'event-q',
+          (msg) => {
+            messages.push(msg);
+          },
+          { consumerTag: 'event-tag' },
+        );
 
-        channel.consume('other-q', (msg) => {
-          messages.push(msg);
-        }, { consumerTag: 'other-tag' });
+        channel.consume(
+          'other-q',
+          (msg) => {
+            messages.push(msg);
+          },
+          { consumerTag: 'other-tag' },
+        );
 
         expect(messages).to.have.length(10);
 
@@ -230,21 +306,37 @@ describe('channel #prefetch', () => {
         channel.prefetch(10);
 
         const messages = [];
-        channel.consume('event-q', (msg) => {
-          messages.push(msg);
-        }, { consumerTag: 'event-tag' });
+        channel.consume(
+          'event-q',
+          (msg) => {
+            messages.push(msg);
+          },
+          { consumerTag: 'event-tag' },
+        );
 
-        channel.consume('other-q', (msg) => {
-          messages.push(msg);
-        }, { consumerTag: 'other-tag' });
+        channel.consume(
+          'other-q',
+          (msg) => {
+            messages.push(msg);
+          },
+          { consumerTag: 'other-tag' },
+        );
 
-        await Promise.all(Array(31).fill().map((_, idx) => {
-          return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-        }));
+        await Promise.all(
+          Array(31)
+            .fill()
+            .map((_, idx) => {
+              return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
+            }),
+        );
 
-        await Promise.all(Array(31).fill().map((_, idx) => {
-          return channel.publish('event', `other.${idx}`, Buffer.from(`${idx}`));
-        }));
+        await Promise.all(
+          Array(31)
+            .fill()
+            .map((_, idx) => {
+              return channel.publish('event', `other.${idx}`, Buffer.from(`${idx}`));
+            }),
+        );
 
         expect(messages).to.have.length(10);
 

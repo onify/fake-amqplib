@@ -100,7 +100,9 @@ describe('fake amqplib', () => {
       connection.createChannel((channelErr, channel) => {
         if (channelErr) return done(channelErr);
         channel.assertExchange('wrong-type', {}, (err) => {
-          expect(err).to.be.ok.and.have.property('message').that.match(/topic or direct/);
+          expect(err)
+            .to.be.ok.and.have.property('message')
+            .that.match(/topic or direct/);
           done();
         });
       });
@@ -125,7 +127,7 @@ describe('fake amqplib', () => {
       try {
         await channel.consume('event-q');
       } catch (e) {
-        var err = e; // eslint-disable-line
+        var err = e;
       }
       expect(err).to.be.ok;
       expect(err.message).to.match(/Message callback/i);

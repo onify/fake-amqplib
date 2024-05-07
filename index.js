@@ -36,13 +36,23 @@ class FakeAmqpError extends Error {
 
 class FakeAmqpNotFoundError extends FakeAmqpError {
   constructor(type, name, vhost, killConnection = false) {
-    super(`Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no ${type} '${name}' in vhost '${vhost || '/'}'`, 404, true, killConnection);
+    super(
+      `Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no ${type} '${name}' in vhost '${vhost || '/'}'`,
+      404,
+      true,
+      killConnection,
+    );
   }
 }
 
 class FakeAmqpUnknownDeliveryTag extends FakeAmqpError {
   constructor(deliveryTag) {
-    super(`Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag ${deliveryTag}`, 406, true, false);
+    super(
+      `Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag ${deliveryTag}`,
+      406,
+      true,
+      false,
+    );
   }
   get _emit() {
     return true;
@@ -64,7 +74,7 @@ export class FakeAmqplibChannel extends EventEmitter {
     this[kPrefetch] = 10000;
     this[kChannelPrefetch] = Infinity;
     this[kClosed] = false;
-    const channelName = this._channelName = `channel-${generateId()}`;
+    const channelName = (this._channelName = `channel-${generateId()}`);
     this._version = connection._version;
     this._broker = broker;
 
@@ -104,12 +114,12 @@ export class FakeAmqplibChannel extends EventEmitter {
   }
   bindExchange(destination, source, ...args) {
     const broker = this._broker;
-    return Promise.all([ this.checkExchange(source), this.checkExchange(destination) ]).then(() => {
+    return Promise.all([this.checkExchange(source), this.checkExchange(destination)]).then(() => {
       return this._callBroker(broker.bindExchange, source, destination, ...args);
     });
   }
   bindQueue(queue, source, ...args) {
-    return Promise.all([ this.checkQueue(queue), this.checkExchange(source) ]).then(() => {
+    return Promise.all([this.checkQueue(queue), this.checkExchange(source)]).then(() => {
       return this._callBroker(this._broker.bindQueue, queue, source, ...args);
     });
   }
@@ -176,15 +186,17 @@ export class FakeAmqplibChannel extends EventEmitter {
     if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
     if (exchange === '') return this.sendToQueue(routingKey, content, options, callback);
 
-    const args = [ this._broker.publish, exchange, routingKey, content ];
+    const args = [this._broker.publish, exchange, routingKey, content];
 
     args.push(options, callback);
 
-    this.checkExchange(exchange).then(() => {
-      return this._callBroker(...args);
-    }).catch((err) => {
-      this.emit('error', err);
-    });
+    this.checkExchange(exchange)
+      .then(() => {
+        return this._callBroker(...args);
+      })
+      .catch((err) => {
+        this.emit('error', err);
+      });
 
     return true;
   }
@@ -201,15 +213,17 @@ export class FakeAmqplibChannel extends EventEmitter {
   sendToQueue(queue, content, options, callback) {
     if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
 
-    const args = [ this._broker.sendToQueue, queue, content ];
+    const args = [this._broker.sendToQueue, queue, content];
 
     args.push(options, callback);
 
-    this.checkQueue(queue).then(() => {
-      return this._callBroker(...args);
-    }).catch((err) => {
-      this.emit('error', err);
-    });
+    this.checkQueue(queue)
+      .then(() => {
+        return this._callBroker(...args);
+      })
+      .catch((err) => {
+        this.emit('error', err);
+      });
 
     return true;
   }
@@ -266,7 +280,12 @@ export class FakeAmqplibChannel extends EventEmitter {
       }
 
       if (q.exclusive || (q.options.exclusive && q.options._connectionId !== connId)) {
-        throw new FakeAmqpError(`Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue '${queue}' in vhost '${connUrl.pathname}' in exclusive use"`, 403, true, true);
+        throw new FakeAmqpError(
+          `Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue '${queue}' in vhost '${connUrl.pathname}' in exclusive use"`,
+          403,
+          true,
+          true,
+        );
       }
 
       const consumer = this.consume(queue, onMessage && handler, {
@@ -425,7 +444,7 @@ export class FakeAmqplibChannel extends EventEmitter {
     }
   }
   _callBroker(fn, ...args) {
-    let [ poppedCb ] = args.slice(-1);
+    let [poppedCb] = args.slice(-1);
     if (typeof poppedCb === 'function') args.splice(-1);
     else poppedCb = null;
 
@@ -494,30 +513,34 @@ export class FakeAmqplibConfirmChannel extends FakeAmqplibChannel {
     if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
     if (exchange === '') return this.sendToQueue(routingKey, content, options, callback);
 
-    const args = [ this._broker.publish, exchange, routingKey, content ];
+    const args = [this._broker.publish, exchange, routingKey, content];
 
     args.push(...addConfirmCallback(this._broker, options, callback));
 
-    this.checkExchange(exchange).then(() => {
-      return this._callBroker(...args);
-    }).catch((err) => {
-      this.emit('error', err);
-    });
+    this.checkExchange(exchange)
+      .then(() => {
+        return this._callBroker(...args);
+      })
+      .catch((err) => {
+        this.emit('error', err);
+      });
 
     return true;
   }
   sendToQueue(queue, content, options, callback) {
     if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
 
-    const args = [ this._broker.sendToQueue, queue, content ];
+    const args = [this._broker.sendToQueue, queue, content];
 
     args.push(...addConfirmCallback(this._broker, options, callback));
 
-    this.checkQueue(queue).then(() => {
-      return this._callBroker(...args);
-    }).catch((err) => {
-      this.emit('error', err);
-    });
+    this.checkQueue(queue)
+      .then(() => {
+        return this._callBroker(...args);
+      })
+      .catch((err) => {
+        this.emit('error', err);
+      });
 
     return true;
   }
@@ -644,27 +667,21 @@ function normalizeAmqpUrl(url) {
   if (typeof url === 'string') url = new URL(url);
 
   if (!(url instanceof URL)) {
-    const {
-      protocol = 'amqp',
-      hostname = 'localhost',
-      port = 5672,
-      vhost = '/',
-      username,
-      password,
-      ...rest
-    } = url;
+    const { protocol = 'amqp', hostname = 'localhost', port = 5672, vhost = '/', username, password, ...rest } = url;
     let auth = username;
     if (auth && password) {
       auth += `:${password}`;
     }
-    url = new URL(urlFormat({
-      protocol,
-      hostname,
-      port,
-      pathname: vhost,
-      slashes: true,
-      auth,
-    }));
+    url = new URL(
+      urlFormat({
+        protocol,
+        hostname,
+        port,
+        pathname: vhost,
+        slashes: true,
+        auth,
+      }),
+    );
 
     for (const k in rest) {
       switch (k) {
@@ -711,20 +728,23 @@ function addConfirmCallback(broker, options, callback) {
     }
   }
 
-  return [ options, confirmCallback ];
+  return [options, confirmCallback];
 }
 
 function allUpToDeliveryTag(q, deliveryTag, op, ...args) {
   const brokerMessages = [];
 
-  const consumer = q.consume((_, cmsg) => {
-    const msgDeliveryTag = cmsg.fields.deliveryTag;
-    if (msgDeliveryTag >= deliveryTag) {
-      return q.cancel(cmsg.fields.consumerTag);
-    }
-    brokerMessages.push(cmsg.content[kSmqp]);
-    cmsg[op](...args);
-  }, { prefetch: Infinity });
+  const consumer = q.consume(
+    (_, cmsg) => {
+      const msgDeliveryTag = cmsg.fields.deliveryTag;
+      if (msgDeliveryTag >= deliveryTag) {
+        return q.cancel(cmsg.fields.consumerTag);
+      }
+      brokerMessages.push(cmsg.content[kSmqp]);
+      cmsg[op](...args);
+    },
+    { prefetch: Infinity },
+  );
 
   consumer.cancel();
 

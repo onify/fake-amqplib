@@ -113,7 +113,7 @@ describe('fake amqplib connections', () => {
       const conn1 = await connect('amqp://localhost:5672');
       const conn2 = await connect('amqp://localhost:15672');
       await connect('amqp://localhost:15672/vhost');
-      expect(connections).to.have.length.above(2).and.include.members([ conn1, conn2 ]);
+      expect(connections).to.have.length.above(2).and.include.members([conn1, conn2]);
     });
 
     it('connection.close() removes connection from list', async () => {
@@ -170,16 +170,24 @@ describe('fake amqplib connections', () => {
       await channel2.assertQueue('event-q');
       await channel2.bindQueue('event-q', 'event', '#');
       const msgs = [];
-      await channel2.consume('event-q', (msg) => {
-        msgs.push(msg);
-      }, { noAck: true });
+      await channel2.consume(
+        'event-q',
+        (msg) => {
+          msgs.push(msg);
+        },
+        { noAck: true },
+      );
 
       const channel1 = await conn1.createChannel();
       await channel1.assertQueue('event1-q');
       await channel1.bindQueue('event1-q', 'event', '#');
-      await channel1.consume('event1-q', (msg) => {
-        msgs.push(msg);
-      }, { noAck: true });
+      await channel1.consume(
+        'event1-q',
+        (msg) => {
+          msgs.push(msg);
+        },
+        { noAck: true },
+      );
 
       await conn1.close();
 
