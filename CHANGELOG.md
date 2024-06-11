@@ -1,5 +1,9 @@
 # Changelog
 
+# 3.2.0
+
+- bump [smqp@9](https://github.com/paed01/smqp/blob/default/CHANGELOG.md)
+
 # 3.1.0
 
 - use prettier for formatting rules since they are deprecated in eslint

@@ -42,7 +42,7 @@ You might want to override `amqplib` with `@onify/fake-amqplib` in tests. This c
 
 Example on how to mock amqplib when working with commonjs.
 
-```javascript
+```js
 const amqplib = require('amqplib');
 const fakeAmqp = require('@onify/fake-amqplib');
 
@@ -51,7 +51,7 @@ amqplib.connect = fakeAmqp.connect;
 
 or:
 
-```javascript
+```js
 const mock = require('mock-require');
 const fakeAmqp = require('@onify/fake-amqplib');
 
@@ -60,7 +60,7 @@ mock('amqplib/callback_api', fakeAmqp);
 
 or just mock the entire amqplib with:
 
-```javascript
+```js
 const mock = require('mock-require');
 const fakeAmqp = require('@onify/fake-amqplib');
 
@@ -77,14 +77,13 @@ Both amqplib and fake-amqplib have to be quibbled if reset mock is used during t
 
 _test/setup.js_
 
-```js
+```javascript
 import * as fakeAmqpLib from '@onify/fake-amqplib';
 import { connect as fakeConnect } from '@onify/fake-amqplib';
 import quibble from 'quibble';
 
 (async () => {
   await quibble.esm('amqplib', { connect: fakeConnect });
-  await quibble.esm('amqplib/callback_api', { connect: fakeConnect });
   await quibble.esm('@onify/fake-amqplib', { ...fakeAmqpLib });
 })();
 ```
@@ -101,10 +100,10 @@ _.mocharc.json_ (true for node version < 20)
 
 _test/amqplib-connection-test.js_
 
-```js
+```javascript
 import assert from 'node:assert';
 import { connect } from 'amqplib';
-import { connect as connectCb } from 'amqplib/callback_api';
+import { connect as connectCb } from 'amqplib';
 
 import { resetMock } from '@onify/fake-amqplib';
 

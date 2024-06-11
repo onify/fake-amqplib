@@ -717,7 +717,7 @@ function addConfirmCallback(broker, options, callback) {
   }
 
   function confirmCallback() {
-    broker.off('message.*', consumerTag);
+    broker.off('message.*', { consumerTag });
     switch (undelivered) {
       case 'message.nack':
         return callback(new Error('message nacked'));
