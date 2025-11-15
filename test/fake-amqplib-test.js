@@ -1,4 +1,4 @@
-import { connect, resetMock, FakeAmqplib } from '../index.js';
+import { connect, resetMock, FakeAmqplib } from '@onify/fake-amqplib';
 
 describe('fake amqplib', () => {
   describe('FakeAmqplib', () => {
@@ -9,6 +9,7 @@ describe('fake amqplib', () => {
   });
 
   describe('channels', () => {
+    /** @type {import('@onify/fake-amqplib').FakeAmqplibConnection} */
     let connection;
     before((done) => {
       connect('amqp://localhost', null, (err, conn) => {

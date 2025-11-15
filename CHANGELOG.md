@@ -2,6 +2,11 @@
 
 ## unreleased
 
+## v3.3.0 - 2025-11-15
+
+- bump [smqp@10](https://github.com/paed01/smqp/blob/default/CHANGELOG.md)
+- adjust some typings
+
 ## 3.2.0
 
 - bump [smqp@9](https://github.com/paed01/smqp/blob/default/CHANGELOG.md)

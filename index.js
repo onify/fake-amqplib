@@ -40,7 +40,7 @@ class FakeAmqpNotFoundError extends FakeAmqpError {
       `Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no ${type} '${name}' in vhost '${vhost || '/'}'`,
       404,
       true,
-      killConnection,
+      killConnection
     );
   }
 }
@@ -51,7 +51,7 @@ class FakeAmqpUnknownDeliveryTag extends FakeAmqpError {
       `Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag ${deliveryTag}`,
       406,
       true,
-      false,
+      false
     );
   }
   get _emit() {
@@ -284,7 +284,7 @@ export class FakeAmqplibChannel extends EventEmitter {
           `Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue '${queue}' in vhost '${connUrl.pathname}' in exclusive use"`,
           403,
           true,
-          true,
+          true
         );
       }
 
@@ -680,7 +680,7 @@ function normalizeAmqpUrl(url) {
         pathname: vhost,
         slashes: true,
         auth,
-      }),
+      })
     );
 
     for (const k in rest) {
@@ -743,7 +743,7 @@ function allUpToDeliveryTag(q, deliveryTag, op, ...args) {
       brokerMessages.push(cmsg.content[kSmqp]);
       cmsg[op](...args);
     },
-    { prefetch: Infinity },
+    { prefetch: Infinity }
   );
 
   consumer.cancel();

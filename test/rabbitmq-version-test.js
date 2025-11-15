@@ -1,4 +1,4 @@
-import { connect, resetMock, setVersion, FakeAmqplib } from '../index.js';
+import { connect, resetMock, setVersion, FakeAmqplib } from '@onify/fake-amqplib';
 
 describe('different behaviour between RabbitMQ versions', () => {
   after(() => {

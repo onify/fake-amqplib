@@ -1,4 +1,4 @@
-import { FakeAmqplib } from '../index.js';
+import { FakeAmqplib } from '@onify/fake-amqplib';
 
 describe('channel #prefetch', () => {
   describe('version > 3.2', () => {
@@ -24,7 +24,7 @@ describe('channel #prefetch', () => {
           .fill()
           .map((_, idx) => {
             return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-          }),
+          })
       );
 
       const messages = [];
@@ -44,7 +44,7 @@ describe('channel #prefetch', () => {
             .fill()
             .map((_, idx) => {
               return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-            }),
+            })
         );
 
         const messages = [];
@@ -79,7 +79,7 @@ describe('channel #prefetch', () => {
           (msg) => {
             messages.push(msg);
           },
-          { consumerTag: 'event-tag' },
+          { consumerTag: 'event-tag' }
         );
 
         channel.consume(
@@ -87,7 +87,7 @@ describe('channel #prefetch', () => {
           (msg) => {
             messages.push(msg);
           },
-          { consumerTag: 'other-tag' },
+          { consumerTag: 'other-tag' }
         );
 
         await Promise.all(
@@ -95,7 +95,7 @@ describe('channel #prefetch', () => {
             .fill()
             .map((_, idx) => {
               return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-            }),
+            })
         );
 
         await Promise.all(
@@ -103,7 +103,7 @@ describe('channel #prefetch', () => {
             .fill()
             .map((_, idx) => {
               return channel.publish('event', `other.${idx}`, Buffer.from(`${idx}`));
-            }),
+            })
         );
 
         expect(messages).to.have.length(10);
@@ -118,7 +118,7 @@ describe('channel #prefetch', () => {
           (msg) => {
             messages.push(msg);
           },
-          { consumerTag: 'event-tag' },
+          { consumerTag: 'event-tag' }
         );
 
         channel.consume(
@@ -126,7 +126,7 @@ describe('channel #prefetch', () => {
           (msg) => {
             messages.push(msg);
           },
-          { consumerTag: 'other-tag' },
+          { consumerTag: 'other-tag' }
         );
 
         await Promise.all(
@@ -134,7 +134,7 @@ describe('channel #prefetch', () => {
             .fill()
             .map((_, idx) => {
               return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-            }),
+            })
         );
 
         expect(messages, 'before ack consumed messages').to.have.length(10);
@@ -155,7 +155,7 @@ describe('channel #prefetch', () => {
           (msg) => {
             messages.push(msg);
           },
-          { consumerTag: 'event-tag' },
+          { consumerTag: 'event-tag' }
         );
 
         await Promise.all(
@@ -163,7 +163,7 @@ describe('channel #prefetch', () => {
             .fill()
             .map((_, idx) => {
               return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-            }),
+            })
         );
 
         expect(messages, 'before ack consumed messages').to.have.length(10);
@@ -184,7 +184,7 @@ describe('channel #prefetch', () => {
           (msg) => {
             messages.push(msg);
           },
-          { consumerTag: 'event-tag' },
+          { consumerTag: 'event-tag' }
         );
 
         await Promise.all(
@@ -192,7 +192,7 @@ describe('channel #prefetch', () => {
             .fill()
             .map((_, idx) => {
               return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-            }),
+            })
         );
 
         expect(messages, 'before ack consumed messages').to.have.length(10);
@@ -213,7 +213,7 @@ describe('channel #prefetch', () => {
           (msg) => {
             messages.push(msg);
           },
-          { consumerTag: 'event-tag' },
+          { consumerTag: 'event-tag' }
         );
 
         await Promise.all(
@@ -221,7 +221,7 @@ describe('channel #prefetch', () => {
             .fill()
             .map((_, idx) => {
               return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-            }),
+            })
         );
 
         expect(messages).to.have.length(10);
@@ -243,7 +243,7 @@ describe('channel #prefetch', () => {
             .fill()
             .map((_, idx) => {
               return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-            }),
+            })
         );
 
         await Promise.all(
@@ -251,7 +251,7 @@ describe('channel #prefetch', () => {
             .fill()
             .map((_, idx) => {
               return channel.publish('event', `other.${idx}`, Buffer.from(`${idx}`));
-            }),
+            })
         );
 
         const messages = [];
@@ -260,7 +260,7 @@ describe('channel #prefetch', () => {
           (msg) => {
             messages.push(msg);
           },
-          { consumerTag: 'event-tag' },
+          { consumerTag: 'event-tag' }
         );
 
         channel.consume(
@@ -268,7 +268,7 @@ describe('channel #prefetch', () => {
           (msg) => {
             messages.push(msg);
           },
-          { consumerTag: 'other-tag' },
+          { consumerTag: 'other-tag' }
         );
 
         expect(messages).to.have.length(10);
@@ -311,7 +311,7 @@ describe('channel #prefetch', () => {
           (msg) => {
             messages.push(msg);
           },
-          { consumerTag: 'event-tag' },
+          { consumerTag: 'event-tag' }
         );
 
         channel.consume(
@@ -319,7 +319,7 @@ describe('channel #prefetch', () => {
           (msg) => {
             messages.push(msg);
           },
-          { consumerTag: 'other-tag' },
+          { consumerTag: 'other-tag' }
         );
 
         await Promise.all(
@@ -327,7 +327,7 @@ describe('channel #prefetch', () => {
             .fill()
             .map((_, idx) => {
               return channel.publish('event', `event.${idx}`, Buffer.from(`${idx}`));
-            }),
+            })
         );
 
         await Promise.all(
@@ -335,7 +335,7 @@ describe('channel #prefetch', () => {
             .fill()
             .map((_, idx) => {
               return channel.publish('event', `other.${idx}`, Buffer.from(`${idx}`));
-            }),
+            })
         );
 
         expect(messages).to.have.length(10);

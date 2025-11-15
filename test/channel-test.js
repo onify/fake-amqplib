@@ -1,4 +1,4 @@
-import { connect, resetMock } from '../index.js';
+import { connect, resetMock } from '@onify/fake-amqplib';
 
 describe('channel', () => {
   describe('#assertExchange', () => {
@@ -17,6 +17,7 @@ describe('channel', () => {
   });
 
   describe('#checkExchange', () => {
+    /** @type {import('@onify/fake-amqplib').FakeAmqplibConnection} */
     let connection;
     before(async () => {
       resetMock();
@@ -811,7 +812,7 @@ describe('channel', () => {
             if (err) return done(err);
             expect(ok).to.have.property('consumerTag');
             done();
-          },
+          }
         );
       });
     });
@@ -844,7 +845,7 @@ describe('channel', () => {
             messages.push(msg);
             if (messages.length === 3) resolve(messages);
           },
-          { noAck: true },
+          { noAck: true }
         );
       });
 
@@ -896,7 +897,7 @@ describe('channel', () => {
             channel.ack(msg);
             if (messages.length === 2) resolve(messages);
           },
-          { exclusive: true },
+          { exclusive: true }
         );
       });
 
@@ -919,7 +920,7 @@ describe('channel', () => {
 
       expect(consumeError).to.be.ok.to.have.property('code', 404);
       expect(consumeError.message).to.equal(
-        "Channel closed by server: 404 (NOT-FOUND) with message \"NOT_FOUND - no queue 'non-event-q' in vhost '/myhost'",
+        "Channel closed by server: 404 (NOT-FOUND) with message \"NOT_FOUND - no queue 'non-event-q' in vhost '/myhost'"
       );
     });
 
@@ -945,7 +946,7 @@ describe('channel', () => {
             channel.ack(msg);
             resolve(msg);
           },
-          { exclusive: true },
+          { exclusive: true }
         );
       });
 
@@ -958,7 +959,7 @@ describe('channel', () => {
           (msg) => {
             channel.ack(msg);
           },
-          { exclusive: true },
+          { exclusive: true }
         );
       } catch (err) {
         var consumeError = err;
@@ -966,7 +967,7 @@ describe('channel', () => {
 
       expect(consumeError).to.be.ok.to.have.property('code', 403);
       expect(consumeError.message).to.equal(
-        "Channel closed by server: 403 (ACCESS-REFUSED) with message \"ACCESS_REFUSED - queue 'event-q' in vhost '/myhost' in exclusive use\"",
+        "Channel closed by server: 403 (ACCESS-REFUSED) with message \"ACCESS_REFUSED - queue 'event-q' in vhost '/myhost' in exclusive use\""
       );
 
       try {
@@ -1008,7 +1009,7 @@ describe('channel', () => {
 
       expect(consumeError).to.be.ok.to.have.property('code', 403);
       expect(consumeError.message).to.equal(
-        "Channel closed by server: 403 (ACCESS-REFUSED) with message \"ACCESS_REFUSED - queue 'exclusive-q' in vhost '/myhost' in exclusive use\"",
+        "Channel closed by server: 403 (ACCESS-REFUSED) with message \"ACCESS_REFUSED - queue 'exclusive-q' in vhost '/myhost' in exclusive use\""
       );
 
       try {
@@ -1140,7 +1141,7 @@ describe('channel', () => {
           ++count;
           channel.ack(msg);
         },
-        { consumerTag: 'test-nack-1' },
+        { consumerTag: 'test-nack-1' }
       );
 
       await channel.sendToQueue('event-q', Buffer.from('MSG'));
@@ -1179,7 +1180,7 @@ describe('channel', () => {
             channel2.ack(msg, true);
           }
         },
-        { consumerTag: 'test-nack-2' },
+        { consumerTag: 'test-nack-2' }
       );
 
       const queue = await channel1.assertQueue('events-q');
@@ -1204,7 +1205,7 @@ describe('channel', () => {
       const error = await channelError;
       expect(error.code).to.equal(406);
       expect(error.message).to.equal(
-        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1',
+        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1'
       );
 
       expect(channel._closed).to.be.true;
@@ -1228,7 +1229,7 @@ describe('channel', () => {
       const error = await channelError;
       expect(error.code).to.equal(406);
       expect(error.message).to.equal(
-        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1',
+        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1'
       );
 
       expect(channel._closed).to.be.true;
@@ -1243,7 +1244,7 @@ describe('channel', () => {
         (msg) => {
           channel.ack(msg);
         },
-        { noAck: true },
+        { noAck: true }
       );
 
       const channelError = new Promise((resolve) => {
@@ -1255,7 +1256,7 @@ describe('channel', () => {
       const error = await channelError;
       expect(error.code).to.equal(406);
       expect(error.message).to.equal(
-        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1',
+        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1'
       );
 
       expect(channel._closed).to.be.true;
@@ -1412,7 +1413,7 @@ describe('channel', () => {
       const error = await doubleAckPromise;
       expect(error.code).to.equal(406);
       expect(error.message).to.equal(
-        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1',
+        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1'
       );
 
       expect(channel2._closed).to.be.true;
@@ -1438,7 +1439,7 @@ describe('channel', () => {
       const error = await doubleAckPromise;
       expect(error.code).to.equal(406);
       expect(error.message).to.equal(
-        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1',
+        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1'
       );
 
       expect(channel2._closed).to.be.true;
@@ -1518,7 +1519,7 @@ describe('channel', () => {
       const error = await doubleAckPromise;
       expect(error.code).to.equal(406);
       expect(error.message).to.equal(
-        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1',
+        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1'
       );
 
       expect(channel._closed).to.be.true;
@@ -1544,7 +1545,7 @@ describe('channel', () => {
       const error = await doubleAckPromise;
       expect(error.code).to.equal(406);
       expect(error.message).to.equal(
-        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1',
+        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1'
       );
 
       expect(channel2._closed).to.be.true;
@@ -1631,7 +1632,7 @@ describe('channel', () => {
             channel2.nack(msg, true, true);
           }
         },
-        { consumerTag: 'test-nack-2' },
+        { consumerTag: 'test-nack-2' }
       );
 
       const queue = await channel1.assertQueue('events-q');
@@ -1663,7 +1664,7 @@ describe('channel', () => {
             channel2.nack(msg, true, false);
           }
         },
-        { consumerTag: 'test-nack-2' },
+        { consumerTag: 'test-nack-2' }
       );
 
       const queue = await channel1.assertQueue('events-q');
@@ -1688,7 +1689,7 @@ describe('channel', () => {
       const error = await doubleAckPromise;
       expect(error.code).to.equal(406);
       expect(error.message).to.equal(
-        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1',
+        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1'
       );
 
       expect(channel._closed).to.be.true;
@@ -1714,7 +1715,7 @@ describe('channel', () => {
       const error = await doubleAckPromise;
       expect(error.code).to.equal(406);
       expect(error.message).to.equal(
-        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1',
+        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1'
       );
 
       expect(channel2._closed).to.be.true;
@@ -1740,7 +1741,7 @@ describe('channel', () => {
       const error = await doubleAckPromise;
       expect(error.code).to.equal(406);
       expect(error.message).to.equal(
-        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1',
+        'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1'
       );
 
       expect(channel2._closed).to.be.true;
@@ -1810,7 +1811,7 @@ describe('channel', () => {
             channel1.ack(msg);
           }
         },
-        { consumerTag: 'test-nack-1' },
+        { consumerTag: 'test-nack-1' }
       );
 
       await channelError;

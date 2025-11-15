@@ -1,4 +1,4 @@
-import { connect, connectSync, connections, resetMock, setVersion } from '../index.js';
+import { connect, connectSync, connections, resetMock, setVersion } from '@onify/fake-amqplib';
 
 describe('fake amqplib connections', () => {
   describe('#connect', () => {
@@ -175,7 +175,7 @@ describe('fake amqplib connections', () => {
         (msg) => {
           msgs.push(msg);
         },
-        { noAck: true },
+        { noAck: true }
       );
 
       const channel1 = await conn1.createChannel();
@@ -186,7 +186,7 @@ describe('fake amqplib connections', () => {
         (msg) => {
           msgs.push(msg);
         },
-        { noAck: true },
+        { noAck: true }
       );
 
       await conn1.close();
