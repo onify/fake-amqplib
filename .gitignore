@@ -39,3 +39,7 @@ config/_revision
 package-lock.json
 main.cjs
 tmp/
+
+# AI
+.claude/
+CLAUDE.md

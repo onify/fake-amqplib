@@ -1823,4 +1823,289 @@ describe('channel', () => {
       expect(msg1.content.toString(), 'CONTENT').to.equal('MSG1');
     });
   });
+
+  describe('#recover', () => {
+    let connection, channel;
+    beforeEach(async () => {
+      resetMock();
+      connection = await connect('amqp://localhost');
+      channel = await connection.createChannel();
+      await channel.assertQueue('rq');
+    });
+
+    it('resolves with empty object', async () => {
+      const ok = await channel.recover();
+      expect(ok).to.deep.equal({});
+    });
+
+    it('requeues unacknowledged messages so they can be consumed again', async () => {
+      await channel.sendToQueue('rq', Buffer.from('MSG'));
+
+      const first = await channel.get('rq');
+      expect(first.content.toString()).to.equal('MSG');
+
+      await channel.recover();
+
+      const second = await channel.get('rq');
+      expect(second).to.be.ok;
+      expect(second.content.toString()).to.equal('MSG');
+      expect(second.fields).to.have.property('redelivered', true);
+    });
+
+    it('invokes callback', (done) => {
+      channel.recover((err, ok) => {
+        if (err) return done(err);
+        expect(ok).to.deep.equal({});
+        done();
+      });
+    });
+
+    it('requeues every unacknowledged message when several are outstanding', async () => {
+      await channel.sendToQueue('rq', Buffer.from('m1'));
+      await channel.sendToQueue('rq', Buffer.from('m2'));
+      await channel.sendToQueue('rq', Buffer.from('m3'));
+
+      const first = [await channel.get('rq'), await channel.get('rq'), await channel.get('rq')];
+      expect(first.map((m) => m.content.toString())).to.deep.equal(['m1', 'm2', 'm3']);
+
+      await channel.recover();
+
+      const after = [await channel.get('rq'), await channel.get('rq'), await channel.get('rq')];
+      expect(after.map((m) => m.content.toString())).to.deep.equal(['m1', 'm2', 'm3']);
+      for (const m of after) expect(m.fields).to.have.property('redelivered', true);
+    });
+
+    it('leaves acked messages alone — only the unacked one comes back', async () => {
+      await channel.sendToQueue('rq', Buffer.from('acked'));
+      await channel.sendToQueue('rq', Buffer.from('unacked'));
+
+      const acked = await channel.get('rq');
+      const unacked = await channel.get('rq');
+      channel.ack(acked);
+
+      await channel.recover();
+
+      const next = await channel.get('rq');
+      expect(next, 'one redelivery').to.be.ok;
+      expect(next.content.toString()).to.equal('unacked');
+      expect(next.fields).to.have.property('redelivered', true);
+
+      expect(await channel.get('rq'), 'queue is now empty').to.be.false;
+      void unacked;
+    });
+
+    it('only requeues unacked messages on the channel being recovered, not other channels', async () => {
+      const channelB = await connection.createChannel();
+
+      await channel.sendToQueue('rq', Buffer.from('msg-a'));
+      await channel.sendToQueue('rq', Buffer.from('msg-b'));
+
+      const aMsg = await channel.get('rq');
+      const bMsg = await channelB.get('rq');
+      expect(aMsg.content.toString()).to.equal('msg-a');
+      expect(bMsg.content.toString()).to.equal('msg-b');
+
+      await channel.recover();
+
+      const redeliveredToA = await channel.get('rq');
+      expect(redeliveredToA, 'A redelivery').to.be.ok;
+      expect(redeliveredToA.content.toString()).to.equal('msg-a');
+      expect(redeliveredToA.fields).to.have.property('redelivered', true);
+
+      channelB.ack(bMsg);
+      expect(channelB._closed, 'B is unaffected by A.recover()').to.be.false;
+    });
+
+    it('closes channel if a previously-gotten message is acked after recover', async () => {
+      await channel.sendToQueue('rq', Buffer.from('MSG'));
+      const msg = await channel.get('rq');
+
+      await channel.recover();
+
+      const channelError = new Promise((resolve) => channel.once('error', resolve));
+      channel.ack(msg);
+
+      const err = await channelError;
+      expect(err.code).to.equal(406);
+      expect(err.message).to.match(/PRECONDITION_FAILED - unknown delivery tag/);
+      expect(channel._closed).to.be.true;
+    });
+  });
+
+  describe('confirm channel #waitForConfirms', () => {
+    let connection, channel;
+    before(async () => {
+      resetMock();
+      connection = await connect('amqp://localhost');
+      channel = await connection.createConfirmChannel();
+      await channel.assertQueue('cq');
+    });
+
+    it('resolves promise when no publishes outstanding', async () => {
+      await channel.waitForConfirms();
+    });
+
+    it('resolves after publishes complete', async () => {
+      await new Promise((resolve, reject) => {
+        channel.sendToQueue('cq', Buffer.from('MSG'), {}, (err) => (err ? reject(err) : resolve()));
+      });
+      await channel.waitForConfirms();
+    });
+
+    it('invokes callback', (done) => {
+      channel.waitForConfirms(done);
+    });
+
+    it('waits for in-flight publishes before resolving', async () => {
+      let confirmed = false;
+      channel.sendToQueue('cq', Buffer.from('inflight'), {}, () => {
+        confirmed = true;
+      });
+      await channel.waitForConfirms();
+      expect(confirmed, 'publish callback fired before waitForConfirms resolved').to.be.true;
+    });
+
+    it('rejects with "message nacked" Error when a published message is nacked', async () => {
+      await channel.assertQueue('cq-nack', { maxLength: 0 });
+      channel.sendToQueue('cq-nack', Buffer.from('m'));
+
+      let err;
+      try {
+        await channel.waitForConfirms();
+      } catch (e) {
+        err = e;
+      }
+      expect(err).to.be.an.instanceof(Error);
+      expect(err).to.have.property('message', 'message nacked');
+    });
+
+    it('callback variant receives nack Error', (done) => {
+      channel.assertQueue('cq-nack-cb', { maxLength: 0 }).then(() => {
+        channel.sendToQueue('cq-nack-cb', Buffer.from('m'));
+        channel.waitForConfirms((err) => {
+          try {
+            expect(err).to.be.an.instanceof(Error);
+            expect(err).to.have.property('message', 'message nacked');
+            done();
+          } catch (assertionErr) {
+            done(assertionErr);
+          }
+        });
+      }, done);
+    });
+
+    it('channel is still usable after waitForConfirms rejects', async () => {
+      await channel.assertQueue('cq-after', { maxLength: 0 });
+      channel.sendToQueue('cq-after', Buffer.from('nacked'));
+      try {
+        await channel.waitForConfirms();
+      } catch {
+        // expected
+      }
+
+      expect(channel._closed, 'channel still open after nack').to.be.false;
+
+      await channel.assertQueue('cq-after-ok');
+      await new Promise((resolve, reject) => {
+        channel.sendToQueue('cq-after-ok', Buffer.from('ok'), {}, (err) => (err ? reject(err) : resolve()));
+      });
+      await channel.waitForConfirms();
+    });
+
+    it('supports concurrent calls — all resolve when pending publishes confirm', async () => {
+      channel.sendToQueue('cq', Buffer.from('a'));
+      channel.sendToQueue('cq', Buffer.from('b'));
+      await Promise.all([channel.waitForConfirms(), channel.waitForConfirms(), channel.waitForConfirms()]);
+    });
+
+    it('supports concurrent calls — all reject if any pending publish nacks', async () => {
+      await channel.assertQueue('cq-nack-conc', { maxLength: 0 });
+      channel.sendToQueue('cq-nack-conc', Buffer.from('m'));
+
+      const results = await Promise.allSettled([channel.waitForConfirms(), channel.waitForConfirms()]);
+      for (const r of results) {
+        expect(r.status, 'each concurrent waitForConfirms').to.equal('rejected');
+        expect(r.reason).to.have.property('message', 'message nacked');
+      }
+    });
+
+    it('drains pending confirms on close — waitForConfirms rejects with "channel closed"', async () => {
+      const conn = await connect('amqp://localhost');
+      const ch = await conn.createConfirmChannel();
+      await ch.assertQueue('cq-close');
+      ch.sendToQueue('cq-close', Buffer.from('m'));
+      const wait = ch.waitForConfirms();
+
+      await ch.close();
+
+      let err;
+      try {
+        await wait;
+      } catch (e) {
+        err = e;
+      }
+      expect(err).to.be.an.instanceof(Error);
+      expect(err).to.have.property('message', 'Channel is closed');
+      await conn.close();
+    });
+
+    it('invokes pending publish callbacks with "channel closed" when channel closes', async () => {
+      const conn = await connect('amqp://localhost');
+      const ch = await conn.createConfirmChannel();
+      await ch.assertQueue('cq-close-cb');
+
+      let received;
+      ch.sendToQueue('cq-close-cb', Buffer.from('m'), {}, (err) => {
+        received = err;
+      });
+      await ch.close();
+
+      expect(received).to.be.an.instanceof(Error);
+      expect(received).to.have.property('message', 'Channel is closed');
+      await conn.close();
+    });
+
+    it('publish on an already-closed channel throws and does not leak a pending confirm', async () => {
+      const conn = await connect('amqp://localhost');
+      const ch = await conn.createConfirmChannel();
+      await ch.assertQueue('cq-after-close');
+      await ch.close();
+
+      expect(() => ch.sendToQueue('cq-after-close', Buffer.from('m'))).to.throw(/closed/i);
+
+      // If a pending entry leaked, waitForConfirms would hang forever
+      await ch.waitForConfirms();
+      await conn.close();
+    });
+
+    it('publish() on an already-closed channel throws and does not leak', async () => {
+      const conn = await connect('amqp://localhost');
+      const ch = await conn.createConfirmChannel();
+      await ch.assertExchange('cx-after-close');
+      await ch.close();
+
+      expect(() => ch.publish('cx-after-close', 'k', Buffer.from('m'))).to.throw(/closed/i);
+
+      await ch.waitForConfirms();
+      await conn.close();
+    });
+
+    it('publish() in flight gets "channel closed" via callback when channel closes', async () => {
+      const conn = await connect('amqp://localhost');
+      const ch = await conn.createConfirmChannel();
+      await ch.assertExchange('cx-close');
+      await ch.assertQueue('cx-close-q');
+      await ch.bindQueue('cx-close-q', 'cx-close', '#');
+
+      let received;
+      ch.publish('cx-close', 'k', Buffer.from('m'), {}, (err) => {
+        received = err;
+      });
+      await ch.close();
+
+      expect(received).to.be.an.instanceof(Error);
+      expect(received).to.have.property('message', 'Channel is closed');
+      await conn.close();
+    });
+  });
 });

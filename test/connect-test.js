@@ -275,4 +275,32 @@ describe('fake amqplib connections', () => {
       });
     });
   });
+
+  describe('#updateSecret', () => {
+    it('resolves promise (no-op, fake does not store secrets)', async () => {
+      const connection = await connect('amqp://conn.test');
+      await connection.updateSecret(Buffer.from('new-secret'), 'rotation');
+      connection.close();
+    });
+
+    it('invokes callback', (done) => {
+      connect('amqp://conn.test').then((connection) => {
+        connection.updateSecret(Buffer.from('new-secret'), 'rotation', (err) => {
+          if (err) return done(err);
+          connection.close();
+          done();
+        });
+      });
+    });
+
+    it("emits 'update-secret-ok' on the connection", (done) => {
+      connect('amqp://conn.test').then((connection) => {
+        connection.once('update-secret-ok', () => {
+          connection.close();
+          done();
+        });
+        connection.updateSecret(Buffer.from('new-secret'), 'rotation');
+      });
+    });
+  });
 });

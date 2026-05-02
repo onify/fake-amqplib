@@ -7,6 +7,9 @@ const kClosed = Symbol.for('closed');
 const kDeliveryTag = Symbol.for('channel delivery tag');
 const kPrefetch = Symbol.for('prefetch');
 const kChannelPrefetch = Symbol.for('channel prefetch');
+const kPendingConfirms = Symbol.for('pending confirms');
+
+const CHANNEL_CLOSED_ERROR = 'Channel is closed';
 
 class AmqplibBroker extends Broker {
   constructor(...args) {
@@ -429,6 +432,19 @@ export class FakeAmqplibChannel extends EventEmitter {
       brokerMessage.reject(requeue);
     }
   }
+  recover(...args) {
+    const channelQ = this._channelQueue;
+    return this._callBroker(recoverChannel, ...args);
+
+    function recoverChannel() {
+      let msg;
+      while ((msg = channelQ.get())) {
+        msg.content[kSmqp].reject(true);
+        msg.reject(false);
+      }
+      return {};
+    }
+  }
   prefetch(val, isChannelPrefetch) {
     if (this.connection._version < 3.3) {
       if (isChannelPrefetch !== undefined) {
@@ -449,7 +465,7 @@ export class FakeAmqplibChannel extends EventEmitter {
     else poppedCb = null;
 
     if (this.connection._closed) throw new FakeAmqpError('Connection is closed', 504);
-    if (this[kClosed]) throw new Error('Channel is closed');
+    if (this[kClosed]) throw new Error(CHANNEL_CLOSED_ERROR);
 
     return new Promise((resolve, reject) => {
       try {
@@ -509,19 +525,25 @@ export class FakeAmqplibChannel extends EventEmitter {
 }
 
 export class FakeAmqplibConfirmChannel extends FakeAmqplibChannel {
+  constructor(broker, connection) {
+    super(broker, connection);
+    this[kPendingConfirms] = new Set();
+  }
   publish(exchange, routingKey, content, options, callback) {
     if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
     if (exchange === '') return this.sendToQueue(routingKey, content, options, callback);
+    if (this[kClosed]) throw new Error(CHANNEL_CLOSED_ERROR);
 
     const args = [this._broker.publish, exchange, routingKey, content];
 
-    args.push(...addConfirmCallback(this._broker, options, callback));
+    args.push(...addConfirmCallback(this._broker, options, this._trackConfirm(callback)));
 
     this.checkExchange(exchange)
       .then(() => {
         return this._callBroker(...args);
       })
       .catch((err) => {
+        if (err.message === CHANNEL_CLOSED_ERROR) return;
         this.emit('error', err);
       });
 
@@ -529,20 +551,60 @@ export class FakeAmqplibConfirmChannel extends FakeAmqplibChannel {
   }
   sendToQueue(queue, content, options, callback) {
     if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
+    if (this[kClosed]) throw new Error(CHANNEL_CLOSED_ERROR);
 
     const args = [this._broker.sendToQueue, queue, content];
 
-    args.push(...addConfirmCallback(this._broker, options, callback));
+    args.push(...addConfirmCallback(this._broker, options, this._trackConfirm(callback)));
 
     this.checkQueue(queue)
       .then(() => {
         return this._callBroker(...args);
       })
       .catch((err) => {
+        if (err.message === CHANNEL_CLOSED_ERROR) return;
         this.emit('error', err);
       });
 
     return true;
+  }
+  _trackConfirm(userCallback) {
+    let resolveSettled;
+    const settled = new Promise((resolve) => {
+      resolveSettled = resolve;
+    });
+    const entry = { settled, resolveSettled, userCallback };
+    this[kPendingConfirms].add(entry);
+
+    return (err, ok) => {
+      this[kPendingConfirms].delete(entry);
+      resolveSettled(err || null);
+      if (typeof userCallback === 'function') userCallback(err, ok);
+    };
+  }
+  waitForConfirms(callback) {
+    const snapshot = [...this[kPendingConfirms]].map((entry) => entry.settled);
+    const promise = Promise.all(snapshot).then((errs) => {
+      const firstErr = errs.find((e) => e !== null);
+      if (firstErr) throw firstErr;
+    });
+    if (typeof callback === 'function') {
+      promise.then(
+        () => callback(null),
+        (err) => callback(err)
+      );
+    }
+    return promise;
+  }
+  _teardown() {
+    super._teardown();
+    if (!this[kPendingConfirms] || this[kPendingConfirms].size === 0) return;
+    const err = new Error(CHANNEL_CLOSED_ERROR);
+    for (const entry of [...this[kPendingConfirms]]) {
+      this[kPendingConfirms].delete(entry);
+      entry.resolveSettled(err);
+      if (typeof entry.userCallback === 'function') entry.userCallback(err);
+    }
   }
 }
 
@@ -585,6 +647,10 @@ export class FakeAmqplibConnection extends EventEmitter {
     const channel = new FakeAmqplibConfirmChannel(this._broker, this);
     this._channels.push(channel);
     return resolveOrCallback(args.slice(-1)[0], null, channel);
+  }
+  updateSecret(...args) {
+    process.nextTick(() => this.emit('update-secret-ok'));
+    return resolveOrCallback(args.slice(-1)[0]);
   }
   close(...args) {
     if (this[kClosed]) return resolveOrCallback(args.slice(-1)[0]);

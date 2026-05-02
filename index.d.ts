@@ -1,59 +1,90 @@
 /// <reference types="amqplib" />
 /// <reference types="node" />
 
-declare module '@onify/fake-amqplib' {
-  import { Options, Connection, Channel, ChannelModel } from 'amqplib';
-  import { Broker } from 'smqp';
+import { Options, Connection, Channel, ChannelModel, Replies } from 'amqplib';
+import { Broker } from 'smqp';
 
-  export interface FakeAmqplibChannel extends Channel {
-    /** Channel name and identifier, for faking purposes */
-    _channelName: string;
-    _broker: Broker;
-    _version: number;
-    new (broker: Broker, connection: FakeAmqplibConnection): FakeAmqplibChannel;
-    get _closed(): boolean;
-  }
-
-  export interface FakeAmqplibConnection extends Connection, ChannelModel {
-    _channels: FakeAmqplibChannel[];
-    _url: URL;
-    /** Connection identifier, for faking purposes */
-    _id: string;
-    _broker: Broker;
-    _version: number;
-    new (broker: Broker, version: number, amqpUrl: string, options?: any): FakeAmqplibConnection;
-    get _closed(): boolean;
-  }
-
-  interface SocketOptions {
-    host?: string;
-    keepAlive?: boolean;
-    keepAliveDelay?: number;
-    noDelay?: boolean;
-    port?: number;
-    serverName?: string;
-    timeout?: number;
-    [x: string]: any;
-  }
-
-  type connectCallback = (err: Error, connection: FakeAmqplibConnection) => void;
-
-  export class FakeAmqplib {
-    version: number;
-    connections: FakeAmqplibConnection[];
-    constructor(version?: number);
-    connect(url: string | Options.Connect, socketOptions?: SocketOptions): Promise<FakeAmqplibConnection>;
-    connect(url: string | Options.Connect, socketOptions: SocketOptions, callback: connectCallback): void;
-    connect(url: string | Options.Connect, callback: (err: Error, connection: FakeAmqplibConnection) => void): void;
-    connectSync(url: string | Options.Connect, socketOptions?: SocketOptions): FakeAmqplibConnection;
-    resetMock(): void;
-    setVersion(minorVersion: number): void;
-  }
-
-  export function connect(url: string | Options.Connect, socketOptions?: SocketOptions): Promise<FakeAmqplibConnection>;
-  export function connect(url: string | Options.Connect, socketOptions: SocketOptions, callback: connectCallback): void;
-  export function connect(url: string | Options.Connect, callback: connectCallback): void;
-  export function connectSync(url: string | Options.Connect, socketOptions?: SocketOptions): FakeAmqplibConnection;
-  export function resetMock(): void;
-  export function setVersion(minorVersion: number): void;
+export interface FakeAmqplibChannel extends Channel {
+  /** Channel name and identifier, for faking purposes */
+  _channelName: string;
+  _broker: Broker;
+  _version: number;
+  readonly _closed: boolean;
 }
+
+export const FakeAmqplibChannel: {
+  new (broker: Broker, connection: FakeAmqplibConnection): FakeAmqplibChannel;
+};
+
+export interface FakeAmqplibConfirmChannel extends FakeAmqplibChannel {
+  publish(
+    exchange: string,
+    routingKey: string,
+    content: Buffer,
+    options?: Options.Publish,
+    callback?: (err: Error | null, ok: Replies.Empty) => void
+  ): boolean;
+  sendToQueue(
+    queue: string,
+    content: Buffer,
+    options?: Options.Publish,
+    callback?: (err: Error | null, ok: Replies.Empty) => void
+  ): boolean;
+  waitForConfirms(callback?: (err: Error | null) => void): Promise<void>;
+}
+
+export const FakeAmqplibConfirmChannel: {
+  new (broker: Broker, connection: FakeAmqplibConnection): FakeAmqplibConfirmChannel;
+};
+
+export interface FakeAmqplibConnection extends Connection, ChannelModel {
+  _channels: FakeAmqplibChannel[];
+  _url: URL;
+  /** Connection identifier, for faking purposes */
+  _id: string;
+  _broker: Broker;
+  _version: number;
+  readonly _closed: boolean;
+}
+
+export const FakeAmqplibConnection: {
+  new (broker: Broker, version: number, amqpUrl: string, options?: SocketOptions): FakeAmqplibConnection;
+};
+
+export interface SocketOptions {
+  host?: string;
+  keepAlive?: boolean;
+  keepAliveDelay?: number;
+  noDelay?: boolean;
+  port?: number;
+  serverName?: string;
+  timeout?: number;
+  [x: string]: any;
+}
+
+export type ConnectCallback = (err: Error | null, connection: FakeAmqplibConnection) => void;
+
+export interface FakeAmqplib {
+  version: number;
+  connections: FakeAmqplibConnection[];
+  connect(url: string | Options.Connect, socketOptions?: SocketOptions): Promise<FakeAmqplibConnection>;
+  connect(url: string | Options.Connect, socketOptions: SocketOptions, callback: ConnectCallback): void;
+  connect(url: string | Options.Connect, callback: ConnectCallback): void;
+  connectSync(url: string | Options.Connect, socketOptions?: SocketOptions): FakeAmqplibConnection;
+  resetMock(): void;
+  setVersion(minorVersion: number | string): void;
+}
+
+export const FakeAmqplib: {
+  new (minorVersion?: number | string): FakeAmqplib;
+  (minorVersion?: number | string): FakeAmqplib;
+};
+
+export const connections: FakeAmqplibConnection[];
+
+export function connect(url: string | Options.Connect, socketOptions?: SocketOptions): Promise<FakeAmqplibConnection>;
+export function connect(url: string | Options.Connect, socketOptions: SocketOptions, callback: ConnectCallback): void;
+export function connect(url: string | Options.Connect, callback: ConnectCallback): void;
+export function connectSync(url: string | Options.Connect, socketOptions?: SocketOptions): FakeAmqplibConnection;
+export function resetMock(): void;
+export function setVersion(minorVersion: number | string): void;

@@ -10,6 +10,7 @@ const rules = {
   'no-caller': 2,
   'no-catch-shadow': 2,
   'no-console': 1,
+  'no-duplicate-imports': 2,
   'no-eval': 2,
   'no-extend-native': 2,
   'no-extra-bind': 2,
@@ -69,7 +70,7 @@ export default [
     languageOptions: {
       parserOptions: {
         sourceType: 'module',
-        ecmaVersion: 2020,
+        ecmaVersion: 2022,
       },
       globals: {
         ...globals.node,

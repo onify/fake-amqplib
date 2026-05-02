@@ -2,6 +2,14 @@
 
 ## unreleased
 
+## v3.5.0 - 2026-05-02
+
+- support [amqplib@1](https://github.com/amqp-node/amqplib/blob/main/CHANGELOG.md); bump engines to node `>=18`
+- bump [smqp@12](https://github.com/paed01/smqp/blob/default/CHANGELOG.md)
+- channel `recover()`
+- confirm channel `waitForConfirms()`
+- connection `updateSecret()` (no-op) and `'update-secret-ok'` event
+
 ## v3.4.0 - 2025-11-27
 
 - bump [smqp@11](https://github.com/paed01/smqp/blob/default/CHANGELOG.md)

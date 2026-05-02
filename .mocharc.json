@@ -1,4 +1,5 @@
 {
   "recursive": true,
-  "require": ["chai/register-expect.js"]
+  "require": ["chai/register-expect.js"],
+  "node-option": ["experimental-test-module-mocks", "no-warnings"]
 }
