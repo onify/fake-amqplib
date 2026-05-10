@@ -1930,6 +1930,31 @@ describe('channel', () => {
       expect(err.message).to.match(/PRECONDITION_FAILED - unknown delivery tag/);
       expect(channel._closed).to.be.true;
     });
+
+    it('redelivers to an active consumer with redelivered: true (consumers must check this to avoid loops)', async () => {
+      const received = [];
+      const second = new Promise((resolve) => {
+        channel.consume(
+          'rq',
+          (msg) => {
+            received.push(msg);
+            if (received.length === 2) resolve();
+          },
+          { noAck: false }
+        );
+      });
+
+      await channel.sendToQueue('rq', Buffer.from('MSG'));
+      while (received.length < 1) await new Promise((r) => setImmediate(r));
+
+      await channel.recover();
+      await second;
+
+      expect(received).to.have.lengthOf(2);
+      expect(received[0].fields).to.not.have.property('redelivered', true);
+      expect(received[1].fields).to.have.property('redelivered', true);
+      expect(received[1].content.toString()).to.equal('MSG');
+    });
   });
 
   describe('confirm channel #waitForConfirms', () => {

@@ -5,7 +5,9 @@ import { connect as fakeConnect, resetMock } from '@onify/fake-amqplib';
 
 describe('mocking amqplib in user code', () => {
   describe('via node:test mock.module (Node 20+ recommended)', () => {
-    let connect, ctx;
+    /** @type {typeof import('amqplib').connect} */
+    let connect;
+    let ctx;
 
     before(async () => {
       ctx = mock.module('amqplib', { namedExports: { connect: fakeConnect } });

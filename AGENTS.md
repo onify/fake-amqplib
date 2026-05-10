@@ -37,6 +37,8 @@ Each channel maintains its own internal smqp queue named `#channel-<id>` (`_chan
 
 `ackAll` / `nackAll` drain the channel queue and ack/reject the underlying smqp messages in order. `allUpToDeliveryTag` implements the `allUpTo: true` variants by spawning a temporary smqp consumer with infinite prefetch.
 
+**Snapshot before draining `_channelQueue`.** Anything that drains the channel queue and triggers requeues to the source queue (`recover()`, and similar paths) must collect entries into a snapshot array first — never use a live `while ((msg = channelQ.get())) { ... }` loop. Each `reject(true)` on the underlying smqp message synchronously calls `_consumeNext()`, which dispatches to any active consumer, which pushes a new entry into `_channelQueue` mid-drain. A live loop will never terminate (Node OOM). The faithful-to-RabbitMQ behavior is that consumers stay subscribed and receive redelivered messages with `fields.redelivered === true`; consumer code that ignores `redelivered` and re-nacks will still loop forever, but that mirrors real RabbitMQ.
+
 ### Prefetch
 
 Two values per channel: consumer prefetch (`kPrefetch`, default 10000) and channel-wide prefetch (`kChannelPrefetch`, default Infinity). `_calculateChannelCapacity` clamps a consumer's reported `capacity` by remaining channel-queue room. **Calling `prefetch(val, true)` (the global/channel-wide form) on a connection with `_version < 3.3` closes the connection** — that is RabbitMQ-faithful behavior, not a bug.

@@ -1,6 +1,6 @@
 {
   "name": "@onify/fake-amqplib",
-  "version": "3.5.0",
+  "version": "3.6.0",
   "description": "Fake amqplib",
   "type": "module",
   "exports": {
@@ -40,8 +40,8 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@rollup/plugin-commonjs": "^29.0.0",
-    "@types/amqplib": "^0.10.2",
-    "amqplib": "^1.0.3",
+    "@types/node": "^20.19.40",
+    "amqplib": "^1.2.0",
     "c8": "^11.0.0",
     "chai": "^6.2.1",
     "eslint": "^10.3.0",

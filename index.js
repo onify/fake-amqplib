@@ -437,10 +437,12 @@ export class FakeAmqplibChannel extends EventEmitter {
     return this._callBroker(recoverChannel, ...args);
 
     function recoverChannel() {
+      const snapshot = [];
       let msg;
-      while ((msg = channelQ.get())) {
-        msg.content[kSmqp].reject(true);
-        msg.reject(false);
+      while ((msg = channelQ.get())) snapshot.push(msg);
+      for (const m of snapshot) {
+        m.content[kSmqp].reject(true);
+        m.reject(false);
       }
       return {};
     }
@@ -674,6 +676,8 @@ export function FakeAmqplib(minorVersion = '3.5') {
 
   this.connect = this.connect.bind(this);
   this.connectSync = this.connectSync.bind(this);
+  this.connectWithRecoveryPromise = this.connectWithRecoveryPromise.bind(this);
+  this.connectWithRecoveryCallback = this.connectWithRecoveryCallback.bind(this);
   this.resetMock = this.resetMock.bind(this);
   this.setVersion = this.setVersion.bind(this);
 }
@@ -681,6 +685,19 @@ export function FakeAmqplib(minorVersion = '3.5') {
 FakeAmqplib.prototype.connect = function fakeConnect(amqpUrl, ...args) {
   const connection = this.connectSync(amqpUrl, ...args);
   return resolveOrCallback(args.slice(-1)[0], null, connection);
+};
+
+FakeAmqplib.prototype.connectWithRecoveryPromise = function fakeConnectWithRecoveryPromise(amqpUrl, recoveryOptions, socketOptions) {
+  return this.connect(amqpUrl, socketOptions);
+};
+
+FakeAmqplib.prototype.connectWithRecoveryCallback = function fakeConnectWithRecoveryCallback(
+  amqpUrl,
+  recoveryOptions,
+  socketOptions,
+  callback
+) {
+  return this.connect(amqpUrl, socketOptions, callback);
 };
 
 FakeAmqplib.prototype.connectSync = function fakeConnectSync(amqpUrl, ...args) {
@@ -826,6 +843,14 @@ export function connect(amqpUrl, ...args) {
 
 export function connectSync(amqpUrl, ...args) {
   return defaultFake.connectSync(amqpUrl, ...args);
+}
+
+export function connectWithRecoveryPromise(amqpUrl, recoveryOptions, socketOptions) {
+  return defaultFake.connectWithRecoveryPromise(amqpUrl, recoveryOptions, socketOptions);
+}
+
+export function connectWithRecoveryCallback(amqpUrl, recoveryOptions, socketOptions, callback) {
+  return defaultFake.connectWithRecoveryCallback(amqpUrl, recoveryOptions, socketOptions, callback);
 }
 
 export function resetMock() {

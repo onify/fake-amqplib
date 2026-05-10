@@ -1,4 +1,12 @@
-import { connect, connectSync, connections, resetMock, setVersion } from '@onify/fake-amqplib';
+import {
+  connect,
+  connectSync,
+  connections,
+  connectWithRecoveryCallback,
+  connectWithRecoveryPromise,
+  resetMock,
+  setVersion,
+} from '@onify/fake-amqplib';
 
 describe('fake amqplib connections', () => {
   describe('#connect', () => {
@@ -300,6 +308,35 @@ describe('fake amqplib connections', () => {
           done();
         });
         connection.updateSecret(Buffer.from('new-secret'), 'rotation');
+      });
+    });
+  });
+
+  describe('#connectWithRecoveryPromise', () => {
+    after(resetMock);
+
+    it('resolves a connection (recovery options ignored — fake never disconnects)', async () => {
+      const connection = await connectWithRecoveryPromise('amqp://recover.test', { retries: 5, delay: 100 });
+      expect(connection).to.have.property('_broker');
+      await connection.close();
+    });
+
+    it('forwards socketOptions to the underlying connect', async () => {
+      const connection = await connectWithRecoveryPromise('amqp://recover.test', undefined, { keepAlive: true });
+      expect(connection).to.have.property('_url');
+      await connection.close();
+    });
+  });
+
+  describe('#connectWithRecoveryCallback', () => {
+    after(resetMock);
+
+    it('invokes callback with a connection', (done) => {
+      connectWithRecoveryCallback('amqp://recover.test', { retries: 5 }, {}, (err, connection) => {
+        if (err) return done(err);
+        expect(connection).to.have.property('_broker');
+        connection.close();
+        done();
       });
     });
   });

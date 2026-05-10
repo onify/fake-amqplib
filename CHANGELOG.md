@@ -2,6 +2,14 @@
 
 ## unreleased
 
+## v3.6.0 - 2026-05-10
+
+- support [amqplib@1.1](https://github.com/amqp-node/amqplib/blob/main/CHANGELOG.md): `connectWithRecoveryPromise` / `connectWithRecoveryCallback` (no-op recovery — the fake never disconnects)
+- bump amqplib devDep to `^1.2.0`; drop `@types/amqplib` (amqplib now ships its own types)
+- reshape `index.d.ts` as `declare module '@onify/fake-amqplib'`; re-export `RecoveryOptions` and `SocketOptions` from amqplib
+- `FakeAmqplibConnection` no longer extends `Connection` — `serverProperties` lives on `connection.serverProperties`, matching amqplib
+- fix `recover()` infinite loop with active consumers: snapshot channel queue before draining
+
 ## v3.5.0 - 2026-05-02
 
 - support [amqplib@1](https://github.com/amqp-node/amqplib/blob/main/CHANGELOG.md); bump engines to node `>=18`
