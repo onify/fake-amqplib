@@ -2,6 +2,17 @@
 
 ## unreleased
 
+## v3.7.0 - 2026-05-12
+
+- try to keep up with rapid [amqplib@2](https://github.com/amqp-node/amqplib/blob/main/CHANGELOG.md) and [smqp@14](https://github.com/paed01/smqp/blob/default/CHANGELOG.md) development
+- `fanout` exchanges and empty binding keys
+- `cancel()` leaves delivered messages unacked so they can still be acked or nacked, as `basic.cancel` does
+- channel-wide prefetch no longer starves consumers on other queues once room is freed
+- `assertQueue()` defaults `autoDelete` to false like amqplib; queues asserted without options are no longer deleted when their last consumer is cancelled
+- `checkQueue()`/`assertQueue()` message count excludes expired messages
+- closed channel: promise API rejects instead of throwing synchronously, callback API and `ack`/`nack`/`reject` still throw (as amqplib)
+- server-side channel close (404, 406, ...) emits `error` (if listened to) and `close`; errors carry `classId` and `methodId` like amqplib@1.0.6
+
 ## v3.6.0 - 2026-05-10
 
 - support [amqplib@1.1](https://github.com/amqp-node/amqplib/blob/main/CHANGELOG.md): `connectWithRecoveryPromise` / `connectWithRecoveryCallback` (no-op recovery — the fake never disconnects)

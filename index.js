@@ -11,6 +11,22 @@ const kPendingConfirms = Symbol.for('pending confirms');
 
 const CHANNEL_CLOSED_ERROR = 'Channel is closed';
 
+// AMQP [classId, methodId] of the method that caused a server-side channel close, exposed like amqplib does
+const AMQP_METHOD = {
+  ExchangeDeclare: [40, 10],
+  ExchangeDelete: [40, 20],
+  ExchangeUnbind: [40, 40],
+  QueueDeclare: [50, 10],
+  QueuePurge: [50, 30],
+  QueueDelete: [50, 40],
+  QueueUnbind: [50, 50],
+  BasicConsume: [60, 20],
+  BasicGet: [60, 70],
+  BasicAck: [60, 80],
+  BasicReject: [60, 90],
+  BasicNack: [60, 120],
+};
+
 class AmqplibBroker extends Broker {
   constructor(...args) {
     super(...args);
@@ -29,32 +45,35 @@ class AmqplibBroker extends Broker {
 }
 
 class FakeAmqpError extends Error {
-  constructor(message, code, killChannel, killConnection) {
+  constructor(message, code, killChannel, killConnection, method) {
     super(message);
     this.code = code;
+    if (method) [this.classId, this.methodId] = method;
     this._killChannel = killChannel;
     this._killConnection = killConnection;
   }
 }
 
 class FakeAmqpNotFoundError extends FakeAmqpError {
-  constructor(type, name, vhost, killConnection = false) {
+  constructor(type, name, vhost, method, killConnection = false) {
     super(
-      `Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no ${type} '${name}' in vhost '${vhost || '/'}'`,
+      `Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no ${type} '${name}' in vhost '${vhost}'`,
       404,
       true,
-      killConnection
+      killConnection,
+      method
     );
   }
 }
 
 class FakeAmqpUnknownDeliveryTag extends FakeAmqpError {
-  constructor(deliveryTag) {
+  constructor(deliveryTag, method) {
     super(
       `Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag ${deliveryTag}`,
       406,
       true,
-      false
+      false,
+      method
     );
   }
   get _emit() {
@@ -87,7 +106,7 @@ export class FakeAmqplibChannel extends EventEmitter {
     broker.on('return', this._emitReturn);
 
     this._createChannelMessage = this._createChannelMessage.bind(this);
-    this._calculateChannelCapacity = this._calculateChannelCapacity.bind(this);
+    this._channelCredit = this._channelCredit.bind(this);
   }
   get _closed() {
     return this[kClosed];
@@ -107,12 +126,8 @@ export class FakeAmqplibChannel extends EventEmitter {
     function assertQueue(queueName, ...assertArgs) {
       const name = queueName ? queueName : `amqp.gen-${generateId()}`;
       const options = typeof assertArgs[0] === 'object' ? assertArgs.shift() : {};
-      const queue = this.assertQueue(name, { ...options, _connectionId: connection._id }, ...assertArgs);
-      return {
-        queue: name,
-        messageCount: queue.messageCount,
-        consumerCount: queue.consumerCount,
-      };
+      const queue = this.assertQueue(name, { autoDelete: false, ...options, _connectionId: connection._id }, ...assertArgs);
+      return { queue: name, ...queueStats(queue) };
     }
   }
   bindExchange(destination, source, ...args) {
@@ -131,7 +146,7 @@ export class FakeAmqplibChannel extends EventEmitter {
     return this._callBroker(check, ...args);
 
     function check() {
-      if (!this.getExchange(name)) throw new FakeAmqpNotFoundError('exchange', name, connPath);
+      if (!this.getExchange(name)) throw new FakeAmqpNotFoundError('exchange', name, connPath, AMQP_METHOD.ExchangeDeclare);
       return true;
     }
   }
@@ -142,13 +157,10 @@ export class FakeAmqplibChannel extends EventEmitter {
     function check() {
       let queue;
       if (!(queue = this.getQueue(name))) {
-        throw new FakeAmqpNotFoundError('queue', name, connPath);
+        throw new FakeAmqpNotFoundError('queue', name, connPath, AMQP_METHOD.QueueDeclare);
       }
 
-      return {
-        messageCount: queue.messageCount,
-        consumerCount: queue.consumerCount,
-      };
+      return queueStats(queue);
     }
   }
   get(queue, ...args) {
@@ -158,7 +170,7 @@ export class FakeAmqplibChannel extends EventEmitter {
 
     function getMessage(...getargs) {
       const q = this.getQueue(queue);
-      if (!q) throw new FakeAmqpNotFoundError('queue', queue, connPath);
+      if (!q) throw new FakeAmqpNotFoundError('queue', queue, connPath, AMQP_METHOD.BasicGet);
       const msg = q.get(...getargs) || false;
       if (!msg) return msg;
 
@@ -171,7 +183,7 @@ export class FakeAmqplibChannel extends EventEmitter {
 
     function check() {
       const result = this.deleteExchange(exchange, ...args);
-      if (!result && this.owner.version < 3.2) throw new FakeAmqpNotFoundError('exchange', exchange, connPath);
+      if (!result && this.owner.version < 3.2) throw new FakeAmqpNotFoundError('exchange', exchange, connPath, AMQP_METHOD.ExchangeDelete);
       return result;
     }
   }
@@ -181,13 +193,14 @@ export class FakeAmqplibChannel extends EventEmitter {
 
     function check() {
       const result = this.deleteQueue(queue, ...args);
-      if (!result && this.owner.version < 3.2) throw new FakeAmqpNotFoundError('queue', queue, connPath);
+      if (!result && this.owner.version < 3.2) throw new FakeAmqpNotFoundError('queue', queue, connPath, AMQP_METHOD.QueueDelete);
       return result;
     }
   }
   publish(exchange, routingKey, content, options, callback) {
     if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
     if (exchange === '') return this.sendToQueue(routingKey, content, options, callback);
+    this._assertOpen();
 
     const args = [this._broker.publish, exchange, routingKey, content];
 
@@ -197,9 +210,7 @@ export class FakeAmqplibChannel extends EventEmitter {
       .then(() => {
         return this._callBroker(...args);
       })
-      .catch((err) => {
-        this.emit('error', err);
-      });
+      .catch((err) => this._emitUnobserved(err));
 
     return true;
   }
@@ -209,12 +220,13 @@ export class FakeAmqplibChannel extends EventEmitter {
 
     function check() {
       const result = this.purgeQueue(queue);
-      if (!result && this.owner.version < 3.2) throw new FakeAmqpNotFoundError('queue', queue, connPath);
+      if (!result && this.owner.version < 3.2) throw new FakeAmqpNotFoundError('queue', queue, connPath, AMQP_METHOD.QueuePurge);
       return result === undefined ? undefined : { messageCount: result };
     }
   }
   sendToQueue(queue, content, options, callback) {
     if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
+    this._assertOpen();
 
     const args = [this._broker.sendToQueue, queue, content];
 
@@ -224,9 +236,7 @@ export class FakeAmqplibChannel extends EventEmitter {
       .then(() => {
         return this._callBroker(...args);
       })
-      .catch((err) => {
-        this.emit('error', err);
-      });
+      .catch((err) => this._emitUnobserved(err));
 
     return true;
   }
@@ -236,13 +246,15 @@ export class FakeAmqplibChannel extends EventEmitter {
 
     function check() {
       const q = this.getExchange(destination);
-      if (!q) throw new FakeAmqpNotFoundError('exchange', destination);
+      if (!q) throw new FakeAmqpNotFoundError('exchange', destination, connPath, AMQP_METHOD.ExchangeUnbind);
 
       const exchange = this.getExchange(source);
-      if (!exchange) throw new FakeAmqpNotFoundError('exchange', source);
+      if (!exchange) throw new FakeAmqpNotFoundError('exchange', source, connPath, AMQP_METHOD.ExchangeUnbind);
 
       const result = this.unbindExchange(source, destination, pattern);
-      if (!result && this.owner.version <= 3.2) throw new FakeAmqpNotFoundError('binding', pattern, connPath);
+      if (!result && this.owner.version <= 3.2) {
+        throw new FakeAmqpNotFoundError('binding', pattern, connPath, AMQP_METHOD.ExchangeUnbind);
+      }
 
       return true;
     }
@@ -253,14 +265,14 @@ export class FakeAmqplibChannel extends EventEmitter {
 
     function check() {
       const q = this.getQueue(queue);
-      if (!q) throw new FakeAmqpNotFoundError('queue', queue);
+      if (!q) throw new FakeAmqpNotFoundError('queue', queue, connPath, AMQP_METHOD.QueueUnbind);
 
       const exchange = this.getExchange(source);
-      if (!exchange) throw new FakeAmqpNotFoundError('exchange', source);
+      if (!exchange) throw new FakeAmqpNotFoundError('exchange', source, connPath, AMQP_METHOD.QueueUnbind);
 
       const binding = exchange.getBinding(queue, pattern);
       if (!binding && this.owner.version <= 3.2) {
-        throw new FakeAmqpNotFoundError('binding', pattern, connPath, this.owner.version < 3.2);
+        throw new FakeAmqpNotFoundError('binding', pattern, connPath, AMQP_METHOD.QueueUnbind, this.owner.version < 3.2);
       }
 
       this.unbindQueue(queue, source, pattern);
@@ -270,7 +282,7 @@ export class FakeAmqplibChannel extends EventEmitter {
   consume(queue, onMessage, options = {}, callback) {
     const { _id: connId, _url: connUrl } = this.connection;
     const createMessage = this._createChannelMessage;
-    const calculateCapacity = this._calculateChannelCapacity;
+    const capacity = this._channelCredit;
     const channelName = this._channelName;
     const prefetch = this[kPrefetch];
 
@@ -279,7 +291,7 @@ export class FakeAmqplibChannel extends EventEmitter {
     function consume() {
       const q = queue && this.getQueue(queue);
       if (!q) {
-        throw new FakeAmqpNotFoundError('queue', queue, connUrl.pathname);
+        throw new FakeAmqpNotFoundError('queue', queue, connUrl.pathname, AMQP_METHOD.BasicConsume);
       }
 
       if (q.exclusive || (q.options.exclusive && q.options._connectionId !== connId)) {
@@ -287,24 +299,12 @@ export class FakeAmqplibChannel extends EventEmitter {
           `Channel closed by server: 403 (ACCESS-REFUSED) with message "ACCESS_REFUSED - queue '${queue}' in vhost '${connUrl.pathname}' in exclusive use"`,
           403,
           true,
-          true
+          true,
+          AMQP_METHOD.BasicConsume
         );
       }
 
-      const consumer = this.consume(queue, onMessage && handler, {
-        ...options,
-        channelName,
-        prefetch: calculateCapacity(prefetch),
-        _consumerPrefetch: prefetch,
-      });
-
-      const capacityProp = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(consumer), 'capacity');
-      Object.defineProperty(consumer, 'capacity', {
-        get() {
-          return calculateCapacity(capacityProp.get.call(this));
-        },
-      });
-
+      const consumer = this.consume(queue, onMessage && handler, { ...options, channelName, prefetch, capacity });
       return { consumerTag: consumer.consumerTag };
     }
 
@@ -313,7 +313,11 @@ export class FakeAmqplibChannel extends EventEmitter {
     }
   }
   cancel(consumerTag, ...args) {
-    return this._callBroker(this._broker.cancel, consumerTag, ...args);
+    return this._callBroker(cancel, ...args);
+
+    function cancel() {
+      return this.cancel(consumerTag, { keepPending: true });
+    }
   }
   close(callback) {
     if (this[kClosed]) return;
@@ -322,17 +326,19 @@ export class FakeAmqplibChannel extends EventEmitter {
     return resolveOrCallback(callback);
   }
   ack(message, allUpTo) {
+    this._assertOpen();
     const deliveryTag = message.fields.deliveryTag;
     const channelMessage = this._broker._getMessageByDeliveryTag(this._channelQueue.name, deliveryTag);
     const channelQ = this._channelQueue;
 
     if (!allUpTo) this._callBroker(ackMessage);
     else this._callBroker(ackAllUpToMessage);
+    this._consumeNext();
 
     function ackMessage() {
       const msg = message[kSmqp];
       if (!channelMessage || !msg.pending) {
-        throw new FakeAmqpUnknownDeliveryTag(message.fields.deliveryTag);
+        throw new FakeAmqpUnknownDeliveryTag(message.fields.deliveryTag, AMQP_METHOD.BasicAck);
       }
 
       channelQ.ack(channelMessage, false);
@@ -342,7 +348,7 @@ export class FakeAmqplibChannel extends EventEmitter {
     function ackAllUpToMessage() {
       const msg = message[kSmqp];
       if (!channelMessage || !msg.pending) {
-        throw new FakeAmqpUnknownDeliveryTag(message.fields.deliveryTag);
+        throw new FakeAmqpUnknownDeliveryTag(message.fields.deliveryTag, AMQP_METHOD.BasicAck);
       }
 
       const brokerMessages = allUpToDeliveryTag(channelQ, deliveryTag, 'ack', false);
@@ -355,6 +361,7 @@ export class FakeAmqplibChannel extends EventEmitter {
     }
   }
   ackAll() {
+    this._assertOpen();
     const channelQ = this._channelQueue;
     let msg;
     const brokerMessages = [];
@@ -364,20 +371,23 @@ export class FakeAmqplibChannel extends EventEmitter {
     }
 
     for (const brokerMessage of brokerMessages) {
-      brokerMessage.ack();
+      brokerMessage.ack(false);
     }
+    this._consumeNext();
   }
   reject(message, requeue = false) {
+    this._assertOpen();
     const deliveryTag = message.fields.deliveryTag;
     const channelMessage = this._broker._getMessageByDeliveryTag(this._channelQueue.name, deliveryTag);
     const channelQ = this._channelQueue;
 
     this._callBroker(rejectMessage);
+    this._consumeNext();
 
     function rejectMessage() {
       const msg = message[kSmqp];
       if (!channelMessage || !msg.pending) {
-        throw new FakeAmqpUnknownDeliveryTag(deliveryTag);
+        throw new FakeAmqpUnknownDeliveryTag(deliveryTag, AMQP_METHOD.BasicReject);
       }
 
       channelQ.reject(channelMessage, false);
@@ -385,6 +395,7 @@ export class FakeAmqplibChannel extends EventEmitter {
     }
   }
   nack(message, allUpTo = false, requeue = false) {
+    this._assertOpen();
     if (this.connection._version < 2.3) throw new Error(`Nack is not implemented in versions before 2.3 (${this.connection._version})`);
 
     const deliveryTag = message.fields.deliveryTag;
@@ -393,11 +404,12 @@ export class FakeAmqplibChannel extends EventEmitter {
 
     if (!allUpTo) this._callBroker(nackMessage);
     else this._callBroker(nackAllUpToMessage);
+    this._consumeNext();
 
     function nackMessage() {
       const msg = message[kSmqp];
       if (!channelMessage || !msg.pending) {
-        throw new FakeAmqpUnknownDeliveryTag(deliveryTag);
+        throw new FakeAmqpUnknownDeliveryTag(deliveryTag, AMQP_METHOD.BasicNack);
       }
 
       channelQ.nack(channelMessage, false, false);
@@ -407,7 +419,7 @@ export class FakeAmqplibChannel extends EventEmitter {
     function nackAllUpToMessage() {
       const msg = message[kSmqp];
       if (!channelMessage || !msg.pending) {
-        throw new FakeAmqpUnknownDeliveryTag(deliveryTag);
+        throw new FakeAmqpUnknownDeliveryTag(deliveryTag, AMQP_METHOD.BasicNack);
       }
 
       const brokerMessages = allUpToDeliveryTag(channelQ, deliveryTag, 'nack', false, false);
@@ -420,6 +432,7 @@ export class FakeAmqplibChannel extends EventEmitter {
     }
   }
   nackAll(requeue = true) {
+    this._assertOpen();
     const channelQ = this._channelQueue;
     let msg;
     const brokerMessages = [];
@@ -431,6 +444,7 @@ export class FakeAmqplibChannel extends EventEmitter {
     for (const brokerMessage of brokerMessages) {
       brokerMessage.reject(requeue);
     }
+    this._consumeNext();
   }
   recover(...args) {
     const channelQ = this._channelQueue;
@@ -445,6 +459,13 @@ export class FakeAmqplibChannel extends EventEmitter {
         m.reject(false);
       }
       return {};
+    }
+  }
+  _consumeNext() {
+    if (this[kChannelPrefetch] === Infinity) return;
+    const broker = this._broker;
+    for (const consumer of broker._getChannelConsumers(this._channelName)) {
+      broker.getQueue(consumer.queue).consumeNext();
     }
   }
   prefetch(val, isChannelPrefetch) {
@@ -466,23 +487,36 @@ export class FakeAmqplibChannel extends EventEmitter {
     if (typeof poppedCb === 'function') args.splice(-1);
     else poppedCb = null;
 
-    if (this.connection._closed) throw new FakeAmqpError('Connection is closed', 504);
-    if (this[kClosed]) throw new Error(CHANNEL_CLOSED_ERROR);
+    // like amqplib, the callback API throws synchronously on a closed channel while the promise API rejects
+    if (poppedCb) this._assertOpen();
 
     return new Promise((resolve, reject) => {
       try {
+        this._assertOpen();
         const result = fn.call(this._broker, ...args);
         if (poppedCb) poppedCb(null, result);
         return resolve(result);
       } catch (err) {
         if (err._killConnection) this.connection.close();
-        else if (err._killChannel) this._teardown();
-        if (err._emit) this.emit('error', err);
+        else if (err._killChannel) this._kill(err);
         if (!poppedCb) return reject(err);
         poppedCb(err);
         return resolve();
       }
     });
+  }
+  _assertOpen() {
+    if (this.connection._closed) throw new FakeAmqpError('Connection is closed', 504);
+    if (this[kClosed]) throw new Error(CHANNEL_CLOSED_ERROR);
+  }
+  _kill(err) {
+    this._teardown();
+    if (err._emit || this.listenerCount('error')) this.emit('error', err);
+    this.emit('close');
+  }
+  _emitUnobserved(err) {
+    // _kill() already delivered server-close errors to a listener; without one, re-emit so the failure surfaces loudly
+    if (!err._killChannel || !this.listenerCount('error')) this.emit('error', err);
   }
   _emitReturn({ fields, content, properties }) {
     process.nextTick(() => {
@@ -513,16 +547,8 @@ export class FakeAmqplibChannel extends EventEmitter {
 
     broker.off('return', this._emitReturn);
   }
-  _calculateChannelCapacity(consumerCapacity) {
-    const channelPrefetch = this[kChannelPrefetch];
-    if (channelPrefetch === Infinity) return consumerCapacity;
-
-    const channelCapacity = channelPrefetch - this._channelQueue.messageCount;
-
-    let capacity = consumerCapacity;
-    if (channelCapacity <= 0) capacity = 0;
-    else if (channelCapacity < capacity) capacity = channelCapacity;
-    return capacity;
+  _channelCredit() {
+    return this[kChannelPrefetch] - this._channelQueue.messageCount;
   }
 }
 
@@ -534,7 +560,7 @@ export class FakeAmqplibConfirmChannel extends FakeAmqplibChannel {
   publish(exchange, routingKey, content, options, callback) {
     if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
     if (exchange === '') return this.sendToQueue(routingKey, content, options, callback);
-    if (this[kClosed]) throw new Error(CHANNEL_CLOSED_ERROR);
+    this._assertOpen();
 
     const args = [this._broker.publish, exchange, routingKey, content];
 
@@ -546,14 +572,14 @@ export class FakeAmqplibConfirmChannel extends FakeAmqplibChannel {
       })
       .catch((err) => {
         if (err.message === CHANNEL_CLOSED_ERROR) return;
-        this.emit('error', err);
+        this._emitUnobserved(err);
       });
 
     return true;
   }
   sendToQueue(queue, content, options, callback) {
     if (!Buffer.isBuffer(content)) throw new TypeError('content is not a buffer');
-    if (this[kClosed]) throw new Error(CHANNEL_CLOSED_ERROR);
+    this._assertOpen();
 
     const args = [this._broker.sendToQueue, queue, content];
 
@@ -565,7 +591,7 @@ export class FakeAmqplibConfirmChannel extends FakeAmqplibChannel {
       })
       .catch((err) => {
         if (err.message === CHANNEL_CLOSED_ERROR) return;
-        this.emit('error', err);
+        this._emitUnobserved(err);
       });
 
     return true;
@@ -812,6 +838,17 @@ function addConfirmCallback(broker, options, callback) {
   }
 
   return [options, confirmCallback];
+}
+
+/**
+ * Queue counts as reported by queue.declare-ok, expired messages are evicted first
+ * @param {import('smqp').Queue} queue smqp queue
+ * @returns {{ messageCount: number, consumerCount: number }} message- and consumer count
+ */
+function queueStats(queue) {
+  queue.evictExpired();
+  const { messageCount, consumerCount } = queue.getStats();
+  return { messageCount, consumerCount };
 }
 
 function allUpToDeliveryTag(q, deliveryTag, op, ...args) {

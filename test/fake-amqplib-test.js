@@ -103,7 +103,7 @@ describe('fake amqplib', () => {
         channel.assertExchange('wrong-type', {}, (err) => {
           expect(err)
             .to.be.ok.and.have.property('message')
-            .that.match(/topic or direct/);
+            .that.match(/topic, direct, or fanout/);
           done();
         });
       });

@@ -233,6 +233,22 @@ describe('channel #prefetch', () => {
         expect(messages).to.have.length(20);
       });
 
+      it('acked message lets a consumer on another queue receive its message', async () => {
+        channel.prefetch(1, true);
+        await channel.publish('event', 'event.1', Buffer.from('event'));
+        await channel.publish('event', 'other.1', Buffer.from('other'));
+
+        const messages = [];
+        await channel.consume('event-q', (msg) => messages.push(msg));
+        await channel.consume('other-q', (msg) => messages.push(msg));
+
+        expect(messages.map((m) => m.content.toString())).to.deep.equal(['event']);
+
+        channel.ack(messages[0]);
+
+        expect(messages.map((m) => m.content.toString())).to.deep.equal(['event', 'other']);
+      });
+
       it('limits messages on all channel consumers', async () => {
         channel.prefetch(5);
         channel.prefetch(20, true);

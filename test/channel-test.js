@@ -14,6 +14,33 @@ describe('channel', () => {
       expect(ok).to.be.ok;
       expect(ok).to.have.property('exchange', 'event');
     });
+
+    it('fanout exchange routes to every bound queue regardless of routing key', async () => {
+      await channel.assertExchange('fanout-x', 'fanout');
+      await channel.assertQueue('fanout-q1');
+      await channel.assertQueue('fanout-q2');
+      await channel.bindQueue('fanout-q1', 'fanout-x', '');
+      await channel.bindQueue('fanout-q2', 'fanout-x', 'ignored.key');
+
+      channel.publish('fanout-x', 'some.key', Buffer.from('a'));
+      channel.publish('fanout-x', '', Buffer.from('b'));
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(await channel.checkQueue('fanout-q1')).to.have.property('messageCount', 2);
+      expect(await channel.checkQueue('fanout-q2')).to.have.property('messageCount', 2);
+    });
+
+    it('direct exchange accepts empty binding and routing key', async () => {
+      await channel.assertExchange('direct-x', 'direct');
+      await channel.assertQueue('direct-q');
+      await channel.bindQueue('direct-q', 'direct-x', '');
+
+      channel.publish('direct-x', '', Buffer.from('a'));
+      channel.publish('direct-x', 'other', Buffer.from('b'));
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(await channel.checkQueue('direct-q')).to.have.property('messageCount', 1);
+    });
   });
 
   describe('#checkExchange', () => {
@@ -138,6 +165,15 @@ describe('channel', () => {
       resetMock();
       const connection = await connect('amqp://localhost');
       channel = await connection.createChannel();
+    });
+
+    it('messageCount excludes expired messages', async () => {
+      await channel.assertQueue('ttl-q', { messageTtl: 1 });
+      await channel.sendToQueue('ttl-q', Buffer.from('old'));
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      expect(await channel.checkQueue('ttl-q')).to.have.property('messageCount', 0);
+      expect(await channel.assertQueue('ttl-q', { messageTtl: 1 })).to.have.property('messageCount', 0);
     });
 
     it('returns message- and consumer count in callback if exists', (done) => {
@@ -459,6 +495,27 @@ describe('channel', () => {
     beforeEach(async () => {
       resetMock();
       connection = await connect('amqp://localhost');
+    });
+
+    it('surfaces missing exchange as unhandled error if channel has no error listener', async () => {
+      const channel = await connection.createChannel();
+      const unhandled = new Promise((resolve) => process.once('unhandledRejection', resolve));
+
+      expect(channel.publish('missing', 'test.1', Buffer.from('MSG'))).to.be.true;
+
+      expect(await unhandled).to.include({ code: 404, classId: 40, methodId: 10 });
+      expect(channel._closed).to.be.true;
+    });
+
+    it('emits error if channel is closed while publish is in flight', async () => {
+      const channel = await connection.createChannel();
+      await channel.assertExchange('consume');
+      const errored = new Promise((resolve) => channel.once('error', resolve));
+
+      channel.publish('consume', 'test.1', Buffer.from('MSG'));
+      channel.close();
+
+      expect(await errored).to.have.property('message', 'Channel is closed');
     });
 
     it('ignores callback and returns true', async () => {
@@ -792,6 +849,54 @@ describe('channel', () => {
     });
   });
 
+  describe('#get on closed channel (amqplib@1.0.6)', () => {
+    let channel;
+    beforeEach(async () => {
+      resetMock();
+      const connection = await connect('amqp://amqp.test');
+      channel = await connection.createChannel();
+      await channel.assertQueue('event-q');
+    });
+
+    it('rejects with code, classId and methodId and closes channel if queue does not exist', async () => {
+      const errored = new Promise((resolve) => channel.once('error', resolve));
+      const closed = new Promise((resolve) => channel.once('close', resolve));
+
+      let err;
+      try {
+        await channel.get('nope');
+      } catch (e) {
+        err = e;
+      }
+
+      expect(err).to.include({ code: 404, classId: 60, methodId: 70 });
+      expect(err.message).to.equal(`Channel closed by server: 404 (NOT-FOUND) with message "NOT_FOUND - no queue 'nope' in vhost '/'`);
+      expect(await errored).to.equal(err);
+      await closed;
+      expect(channel._closed).to.be.true;
+    });
+
+    it('rejects instead of throwing if channel is closed', async () => {
+      await channel.close();
+
+      let promise;
+      expect(() => (promise = channel.get('event-q'))).to.not.throw();
+
+      let err;
+      try {
+        await promise;
+      } catch (e) {
+        err = e;
+      }
+      expect(err).to.have.property('message', 'Channel is closed');
+    });
+
+    it('callback api throws synchronously if channel is closed', async () => {
+      await channel.close();
+      expect(() => channel.get('event-q', () => {})).to.throw('Channel is closed');
+    });
+  });
+
   describe('#consume', () => {
     let connection, channel;
     beforeEach(async () => {
@@ -1047,6 +1152,41 @@ describe('channel', () => {
       expect(channel._broker).to.have.property('consumerCount', 0);
     });
 
+    it('leaves delivered messages unacked so they can still be acked, as basic.cancel does', async () => {
+      await channel.cancel(consumerTag);
+      await channel.assertQueue('cancel-q');
+      await channel.sendToQueue('cancel-q', Buffer.from('a'));
+      await channel.sendToQueue('cancel-q', Buffer.from('b'));
+      channel.prefetch(1);
+
+      const delivered = [];
+      const { consumerTag: tag } = await channel.consume('cancel-q', (msg) => delivered.push(msg));
+      expect(delivered).to.have.length(1);
+
+      await channel.cancel(tag);
+
+      expect(channel._broker.getQueue('cancel-q').getStats()).to.include({ messageCount: 2, unackedCount: 1 });
+
+      channel.ack(delivered[0]);
+
+      expect(channel._closed).to.be.false;
+      expect(channel._broker.getQueue('cancel-q').getStats()).to.include({ messageCount: 1, unackedCount: 0 });
+    });
+
+    it('does not delete queue when last consumer is cancelled, amqplib defaults autoDelete to false', async () => {
+      await channel.cancel(consumerTag);
+      expect(channel._broker.getQueue('event-q')).to.be.ok;
+    });
+
+    it('deletes queue when last consumer is cancelled if asserted with autoDelete', async () => {
+      await channel.assertQueue('auto-q', { autoDelete: true });
+      const { consumerTag: tag } = await channel.consume('auto-q', () => {});
+
+      await channel.cancel(tag);
+
+      expect(channel._broker.getQueue('auto-q')).to.be.undefined;
+    });
+
     it('invokes callback when consumer is cancelled', (done) => {
       channel.cancel(consumerTag, (err) => {
         if (err) return done(err);
@@ -1081,6 +1221,17 @@ describe('channel', () => {
         done();
       });
       channel.close();
+    });
+
+    it('ack, nack, reject, ackAll and nackAll throw synchronously if channel is closed', async () => {
+      await channel.close();
+      const msg = { fields: { deliveryTag: 1 } };
+
+      expect(() => channel.ack(msg)).to.throw('Channel is closed');
+      expect(() => channel.nack(msg)).to.throw('Channel is closed');
+      expect(() => channel.reject(msg)).to.throw('Channel is closed');
+      expect(() => channel.ackAll()).to.throw('Channel is closed');
+      expect(() => channel.nackAll()).to.throw('Channel is closed');
     });
 
     it('emits close once', (done) => {
@@ -1204,6 +1355,7 @@ describe('channel', () => {
 
       const error = await channelError;
       expect(error.code).to.equal(406);
+      expect(error).to.include({ classId: 60, methodId: 80 });
       expect(error.message).to.equal(
         'Channel closed by server: 406 (PRECONDITION-FAILED) with message "PRECONDITION_FAILED - unknown delivery tag 1'
       );

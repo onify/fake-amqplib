@@ -41,7 +41,7 @@ Each channel maintains its own internal smqp queue named `#channel-<id>` (`_chan
 
 ### Prefetch
 
-Two values per channel: consumer prefetch (`kPrefetch`, default 10000) and channel-wide prefetch (`kChannelPrefetch`, default Infinity). `_calculateChannelCapacity` clamps a consumer's reported `capacity` by remaining channel-queue room. **Calling `prefetch(val, true)` (the global/channel-wide form) on a connection with `_version < 3.3` closes the connection** — that is RabbitMQ-faithful behavior, not a bug.
+Two values per channel: consumer prefetch (`kPrefetch`, default 10000) and channel-wide prefetch (`kChannelPrefetch`, default Infinity). Channel-wide prefetch is enforced through smqp's `capacity` consume option: `_channelCredit` reports the remaining channel-queue room as credit, and `_consumeNext()` (called after ack/nack/reject/ackAll/nackAll) wakes consumers on the channel's other queues once room is freed. **Calling `prefetch(val, true)` (the global/channel-wide form) on a connection with `_version < 3.3` closes the connection** — that is RabbitMQ-faithful behavior, not a bug.
 
 ### RabbitMQ version gating
 
